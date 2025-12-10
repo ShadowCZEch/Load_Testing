@@ -31,6 +31,8 @@ def scan_ports_tcp(workers=100, timeout=1.0):
             except (socket.timeout, TimeoutError, OSError):
                 pass
     open_ports.sort()
+    if not open_ports:
+        raise ValueError("No open ports found.")
     dst_port = random.choice(open_ports)
     print("Randomly chosen port:",dst_port)
     return dst_port
@@ -54,8 +56,8 @@ def scan_ports_udp(workers=100, timeout=1.0):
     results = {}
     cfg = config_load()
     ipaddr = cfg["ipaddr"]
-    udp_start = cfg["udp_range_start"]
-    udp_end = cfg["udp_range_end"]
+    udp_start = int(cfg["udp_range_start"])
+    udp_end = int(cfg["udp_range_end"])
     if udp_end < udp_start:
         raise ValueError("'udp_range_end' must be greater than 'udp_range_start'.")
     ports= range(udp_start,udp_end)
@@ -73,6 +75,8 @@ def scan_ports_udp(workers=100, timeout=1.0):
                 results[port] = ("error",str(e))
                 continue
     open_ports.sort()
+    if not open_ports:
+        raise ValueError("No open ports found.")
     dst_port = random.choice(open_ports)
     print(open_ports,results,dst_port)
-    return open_ports,results,dst_port
+    return dst_port

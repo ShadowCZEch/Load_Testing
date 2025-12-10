@@ -1,4 +1,5 @@
 # locustfile.py
+
 from gevent import monkey
 
 from Config_Load import load_ipaddr
@@ -27,7 +28,6 @@ except Exception as e:
 
 pick = cfg.get("pick") if cfg else None
 host_ip = load_ipaddr(cfg,pick)
-test_port = scan_ports_tcp()
 
 def cfg_int(key):
     if cfg is None:
@@ -104,8 +104,8 @@ class TcpUser(User):
 
     def __init__(self, environment):
         super().__init__(environment)
-        host = load_ipaddr(cfg,pick)
-        port = test_port
+        host = environment.host
+        host, port = host.split(":")
         self.client = GeventTcpClient(host=host, port=int(port), timeout=5)
 
     def on_start(self):
@@ -145,8 +145,7 @@ def run_locust_headless_and_make_report(locustfile: str = "locustfile.py",
                                         users: int = None,
                                         spawn_rate: int = None,
                                         run_time: str = None,
-                                        html_out: str = "report.html",
-                                        host: Optional[str] = host_ip):
+                                        html_out: str = "report.html"):
     locust_path = Path(locustfile).resolve()
     html_out_p = Path(html_out).resolve()
     if users is None:
@@ -162,13 +161,15 @@ def run_locust_headless_and_make_report(locustfile: str = "locustfile.py",
     else:
         raise ValueError("Spawn rate parameter not correctly loaded.")
 
+    print("Starting TCP scan")
+    open_ports = scan_ports_tcp()
+    host = f"{host_ip}:{open_ports}"
     cmd = [sys.executable, "-m", "locust", "-f", str(locust_path), "--headless",
            "-u", str(users), "-r", str(spawn_rate), "--run-time", run_time, "--html", str(html_out_p)]
 
     if host:
         cmd += ["--host", host]
 
-    print("Starting TCP scan")
     print("Running Locust:", " ".join(cmd))
     subprocess.check_call(cmd)
 
