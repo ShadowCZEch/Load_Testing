@@ -25,15 +25,15 @@ def generate_users_from_ip():
         ip_max = int(ipaddress.IPv6Address(source_ip_maximal))
         protocol = ipaddress.IPv6Address
     else:
-        raise ValueError("Chybná hodnota pick")
+        raise ValueError("Invalid pick value")
 
     check = ip_max - ip_min+1
 
     if ip_min > ip_max:
-        raise ValueError("Chyba rozsahu")
+        raise ValueError("Range error")
 
     if check < unique_users_count:
-        raise ValueError("Přílíš mnoho uživatelů na zvolený rozsah")
+        raise ValueError("Too many users for selected range")
 
     if pick == 4:
         chosen=random.sample(range(ip_min,ip_max+1),unique_users_count)
@@ -61,7 +61,7 @@ def udp_packet():
     port_scan=scan_ports_udp()
     ip_src=random.choice(source_generate)
     dst_port=port_scan
-    sport = 12345
+    sport = random.sample(range(1,65535),1)
 
     if packet_size < IP_BASE + UDP_HDR:
         print(f"Zadána menší než standartní velikost paketu. Bude použita standartní velikost. \n "
@@ -85,11 +85,11 @@ def tcp_packet():
     packet_size=int(cfg["packet_size"])
     ip_dst=cfg["ipaddr"]
     source_generate=generate_users_from_ip()
-    #port_scan=scan_ports_tcp()
+    port_scan=scan_ports_tcp()
     ip_src=random.choice(source_generate)
     #open_ports,dst_port=port_scan
-    sport = 12345
-    dst_port = 12345
+    sport = random.sample(range(1,65535),1)
+    dst_port = port_scan
 
     seq=None
     IP_BASE = 20
