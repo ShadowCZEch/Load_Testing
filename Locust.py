@@ -64,10 +64,10 @@ class GeventTcpClient:
         try:
             self.sock = socket.create_connection((self.host, self.port), timeout=self.timeout)
             elapsed_ms = max(1, int((perf_counter() - start) * 1000))
-            events.request.fire(request_type="tcp", name="connect", response_time=elapsed_ms, response_length=0)
+            events.request_succes.fire(request_type="tcp", name="connect", response_time=elapsed_ms, response_length=0)
         except Exception as e:
             elapsed_ms = max(1, int((perf_counter() - start) * 1000))
-            events.request.fire(request_type="tcp", name="connect", response_time=elapsed_ms, exception=e)
+            events.request_failure.fire(request_type="tcp", name="connect", response_time=elapsed_ms, exception=e)
             raise
 
     def send_and_recv(self, data: bytes, recv_buf: int = 4096) -> Optional[bytes]:
@@ -78,11 +78,11 @@ class GeventTcpClient:
             self.sock.sendall(data)
             resp = self.sock.recv(recv_buf)
             elapsed_ms = max(1, int((perf_counter() - start) * 1000))
-            events.request.fire(request_type="tcp", name="send_recv", response_time=elapsed_ms, response_length=len(resp))
+            events.request_succes.fire(request_type="tcp", name="send_recv", response_time=elapsed_ms, response_length=len(resp))
             return resp
         except Exception as e:
             elapsed_ms = max(1, int((perf_counter() - start) * 1000))
-            events.request.fire(request_type="tcp", name="send_recv", response_time=elapsed_ms, exception=e)
+            events.request_failure.fire(request_type="tcp", name="send_recv", response_time=elapsed_ms, exception=e)
             try:
                 if self.sock:
                     self.sock.close()

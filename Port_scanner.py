@@ -1,14 +1,25 @@
+from scapy.error import Scapy_Exception
+
 from Config_Load import config_load
 import random
 import socket
+from scapy.layers.inet import IP,TCP,sr1
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 
-def is_tcp_open(ipaddr, port, timeout=1.0):
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(timeout)
-        return s.connect_ex((ipaddr, port)) == 0
+def syn_scan(ipaddr, port, timeout=1.0):
+    pkt = IP(dst=ipaddr)/TCP(dport=port,flags="S")
+    resp = sr1(pkt,timeout=timeout,verbose=False)
+
+    if resp is None:
+        return False
+
+    if resp.haslayer(TCP) and resp[TCP].flags == 0x12:
+        rst = IP(dst=ipaddr)/TCP(dport=port,flags="R")
+        sr1(rst,timeout=timeout,verbose=False)
+        return True
+    return False
 
 def scan_ports_tcp(workers=100, timeout=1.0):
     open_ports = []
@@ -21,14 +32,14 @@ def scan_ports_tcp(workers=100, timeout=1.0):
     ports= range(tcp_start,tcp_end)
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        futures = {ex.submit(is_tcp_open, ipaddr, port, timeout): port for port in ports}
+        futures = {ex.submit(syn_scan, ipaddr, port, timeout): port for port in ports}
         for fut in as_completed(futures):
             port = futures[fut]
             try:
                 if fut.result():
                     open_ports.append(port)
 
-            except (socket.timeout, TimeoutError, OSError):
+            except (Scapy_Exception, OSError, TimeoutError):
                 pass
     open_ports.sort()
     if not open_ports:
@@ -51,7 +62,7 @@ def probe_udp_simple(ipaddr, port, timeout=1.0):
         except Exception as e:
             return "filtered",None,str(e)
 
-def scan_ports_udp(workers=100, timeout=1.0):
+def scan_ports_udp(workers=100, timeout=0.5):
     open_ports = []
     results = {}
     cfg = config_load()
