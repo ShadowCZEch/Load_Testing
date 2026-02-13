@@ -1,5 +1,8 @@
-from Config_Load import config_load
-from Watchdog import run
+from Watchdog import Watchdog
+
+def main():
+    Watchdog()
 
 if __name__ == "__main__":
-        config_load()
+    main()
+

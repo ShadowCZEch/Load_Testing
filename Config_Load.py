@@ -211,3 +211,19 @@ def config_load():
         "poll_interval": ping_interval,
         "spawn_rate": spwn_rate,
     }
+
+class Config_Load:
+    _instance = None
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance.data = config_load()
+        return cls._instance
+
+    def __getitem__(self, key):
+        return self.data.get(key)
+
+    def get(self,key=None,default=None):
+        if key is None:
+            return self.data
+        return self.data.get(key,default)
