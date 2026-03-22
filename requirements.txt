@@ -1,3 +1,0 @@
-gevent==25.9.1
-locust==2.42.2
-scapy==2.6.1

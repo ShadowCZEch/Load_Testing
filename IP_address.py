@@ -1,13 +1,11 @@
 import secrets
 import ipaddress
 import random
-import platform
-import subprocess
 import psutil
-
+from scapy.layers.inet6 import IPv6, ICMPv6ND_NS
+from scapy.layers.l2 import Ether,ARP
+from scapy.sendrecv import sr1,srp
 from Config_Load import Config_Load
-
-IS_WINDOWS = platform.system().lower() == "windows"
 
 
 class IPGenerator:
@@ -28,17 +26,19 @@ class IPGenerator:
 
         self.source_ip_minimal = self.cfg.data["source_ip_minimal"]
         self.source_ip_maximal = self.cfg.data["source_ip_maximal"]
+        self.version_minimal = int(ipaddress.ip_address(self.source_ip_minimal))
+        self.version_maximal = int(ipaddress.ip_address(self.source_ip_maximal))
 
-        if self.pick == 4:
+        if self.version_minimal == 4 & self.version_maximal == 4:
             self.ip_min = int(ipaddress.IPv4Address(self.source_ip_minimal))
             self.ip_max = int(ipaddress.IPv4Address(self.source_ip_maximal))
             self.protocol = ipaddress.IPv4Address
-        elif self.pick == 6:
+        elif self.version_minimal == 6 & self.version_maximal == 6:
             self.ip_min = int(ipaddress.IPv6Address(self.source_ip_minimal))
             self.ip_max = int(ipaddress.IPv6Address(self.source_ip_maximal))
             self.protocol = ipaddress.IPv6Address
         else:
-            raise ValueError("Invalid pick value")
+            raise ValueError("Invalid protocol value")
 
         self.check = self.ip_max - self.ip_min + 1
 
@@ -52,43 +52,29 @@ class IPGenerator:
         self._initialized = True
 
 
-    @staticmethod
-    def linux_detect_iface():
-        if IS_WINDOWS:
-            return None
+    def linux_detect_iface(self):
         for iface, addrs in psutil.net_if_addrs().items():
             if iface == "lo":
                 continue
             if iface.startswith("docker") or iface.startswith("veth"):
                 continue
-            return iface
+            return self.iface
         raise RuntimeError("No valid interface found")
 
-    def is_used(self,ip_str,pick, iface):
-        if IS_WINDOWS:
-            return self.is_IP_used_windows(ip_str)
-        else:
-            if pick == 4:
+    def is_used(self,ip_str,protocol, iface):
+            if protocol == 4:
                 return self.is_IPv4_used_linux(ip_str, iface)
             else:
                 return self.is_IPv6_used_linux(ip_str, iface)
 
     def is_IPv4_used_linux(self,ip,iface):
-        from scapy.all import ARP, Ether, srp
         arp = ARP(pdst=ip)
         ether = Ether(dst="ff:ff:ff:ff:ff:ff")
         ans = srp(ether/arp, timeout=1, iface=iface, verbose=False)[0]
         return len(ans) > 0
 
-    def is_IP_used_windows(self,ip):
-        result = subprocess.run(["ping","-n","1","-w","200",ip],
-        stdout=subprocess.DEVNULL
-        )
-        return result.returncode == 0
-
     def is_IPv6_used_linux(self,ip,iface):
-        from scapy.all import IPV6,ICMPv6ND_NS, sr1
-        ns = IPV6(dst=ip)/ICMPv6ND_NS(tgt=ip)
+        ns = IPv6(dst=ip)/ICMPv6ND_NS(tgt=ip)
         ans = sr1(ns, timeout=1, iface=iface, verbose=False)
         return ans is not None
 
@@ -98,7 +84,7 @@ class IPGenerator:
 
         while len(gen) < self.unique_users_count:
             remaining = self.unique_users_count - len(gen)
-            if self.pick == 4:
+            if self.protocol == 4:
                 chosen = random.sample(range(self.ip_min, self.ip_max + 1), remaining)
 
             else:

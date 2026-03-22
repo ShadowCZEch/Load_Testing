@@ -24,17 +24,24 @@ def syn_scan(ipaddr, port, timeout=1.0):
 def scan_ports_tcp(workers=100, timeout=1.0):
     open_ports = []
     cfg = config_load()
-    ipaddr = cfg["ipaddr"]
-    tcp_start = int(cfg["tcp_range_start"])
-    tcp_end = int(cfg["tcp_range_end"])
+    ipaddr = cfg.get("ipaddr")
+    tcp_start = cfg.get("tcp_range_start")
+    tcp_end = cfg.get("tcp_range_end")
     if tcp_end < tcp_start:
         raise ValueError("'tcp_range_end' must be greater than 'tcp_range_start'.")
     ports= range(tcp_start,tcp_end)
+    total= len(ports)
+    scanned = 0
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
         futures = {ex.submit(syn_scan, ipaddr, port, timeout): port for port in ports}
         for fut in as_completed(futures):
+            scanned += 1
             port = futures[fut]
+
+            if scanned % max(1,total//20) == 0:
+                percent = (scanned/total)*100
+                print(f"Progress: {percent:.1f}% ({scanned}/{total})")
             try:
                 if fut.result():
                     open_ports.append(port)
@@ -66,17 +73,25 @@ def scan_ports_udp(workers=100, timeout=0.5):
     open_ports = []
     results = {}
     cfg = config_load()
-    ipaddr = cfg["ipaddr"]
-    udp_start = int(cfg["udp_range_start"])
-    udp_end = int(cfg["udp_range_end"])
+    ipaddr = cfg.get("ipaddr")
+    udp_start = cfg.get("udp_range_start")
+    udp_end = cfg.get("udp_range_end")
+
     if udp_end < udp_start:
         raise ValueError("'udp_range_end' must be greater than 'udp_range_start'.")
     ports= range(udp_start,udp_end)
+    total= len(ports)
+    scanned = 0
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
         futures = {ex.submit(probe_udp_simple,ipaddr,port,timeout): port for port in ports}
         for fut in as_completed(futures):
+            scanned += 1
             port = futures[fut]
+
+            if scanned % max(1,total//20) == 0:
+                percent = (scanned/total)*100
+                print(f"Progress: {percent:.1f}% ({scanned}/{total})")
             try:
                 status,data,err = fut.result()
                 if status == "open":

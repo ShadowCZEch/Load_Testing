@@ -4,7 +4,6 @@ import random
 from scapy.layers.inet import IP,UDP,TCP
 from scapy.all import Raw
 from Config_Load import Config_Load
-from IP_address import IPGenerator
 import os
 from Port_scanner import scan_ports_tcp, scan_ports_udp
 
@@ -14,11 +13,9 @@ def udp_packet():
     UDP_HDR = 8
 
     cfg=Config_Load()
-    packet_size=int(cfg("packet_size"))
-    ip_dst=cfg("ipaddr")
-    pool= IPGenerator()
+    packet_size=cfg.get("packet_size")
+    ip_dst=cfg.get("ipaddr")
     port_scan=scan_ports_udp()
-    ip_src=pool.get_ips()
     dst_port=port_scan
     sport = random.sample(range(1,65535),1)
 
@@ -32,7 +29,7 @@ def udp_packet():
         payload = os.urandom(payload_len)
     else:
         payload = b""
-    pkt = IP(src=ip_src, dst=ip_dst)/UDP(sport=sport, dport=dst_port)/Raw(load=payload)
+    pkt = IP(dst=ip_dst)/UDP(sport=sport, dport=dst_port)/Raw(load=payload)
     pkt[IP].len = packet_size
     pkt[IP].chksum = None
     pkt[UDP].len = None
@@ -41,11 +38,9 @@ def udp_packet():
 
 def tcp_packet():
     cfg=Config_Load()
-    packet_size=int(cfg("packet_size"))
-    ip_dst=cfg("ipaddr")
-    pool= IPGenerator()
+    packet_size=cfg.get("packet_size")
+    ip_dst=cfg.get("ipaddr")
     port_scan=scan_ports_tcp()
-    ip_src=pool.get_ips()
     sport = random.sample(range(1,65535),1)
     dst_port = port_scan
 
@@ -64,7 +59,7 @@ def tcp_packet():
         payload = b""
 
     tcp_layer = TCP(sport=sport, dport=dst_port, flags="S",seq=(seq if seq is not None else 0))
-    pkt = IP(src=ip_src, dst=ip_dst)/tcp_layer/Raw(load=payload)
+    pkt = IP(dst=ip_dst)/tcp_layer/Raw(load=payload)
     pkt[IP].len = packet_size
     pkt[IP].chksum = None
     pkt[TCP].chksum = None

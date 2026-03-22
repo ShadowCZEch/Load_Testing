@@ -222,7 +222,6 @@ class Config_Load:
 
     def __getitem__(self, key):
         return self.data.get(key)
-
     def get(self,key=None,default=None):
         if key is None:
             return self.data
