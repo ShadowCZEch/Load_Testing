@@ -1,22 +1,18 @@
 
 import random
-
 from scapy.layers.inet import IP,UDP,TCP
-from scapy.all import Raw
+from scapy.all import Raw,sendp
 from Config_Load import Config_Load
 import os
-from Port_scanner import scan_ports_tcp, scan_ports_udp
 
-def udp_packet():
+def udp_packet(dst_port):
 
     IP_BASE = 20
     UDP_HDR = 8
 
     cfg=Config_Load()
-    packet_size=cfg.get("packet_size")
+    packet_size=int(cfg.get("packet_size"))
     ip_dst=cfg.get("ipaddr")
-    port_scan=scan_ports_udp()
-    dst_port=port_scan
     sport = random.sample(range(1,65535),1)
 
     if packet_size < IP_BASE + UDP_HDR:
@@ -34,15 +30,13 @@ def udp_packet():
     pkt[IP].chksum = None
     pkt[UDP].len = None
     pkt[UDP].chksum = None
-    return pkt
+    sendp(pkt,verbose=False)
 
-def tcp_packet():
+def tcp_packet(dst_port):
     cfg=Config_Load()
-    packet_size=cfg.get("packet_size")
+    packet_size=int(cfg.get("packet_size"))
     ip_dst=cfg.get("ipaddr")
-    port_scan=scan_ports_tcp()
     sport = random.sample(range(1,65535),1)
-    dst_port = port_scan
 
     seq=None
     IP_BASE = 20
@@ -63,5 +57,5 @@ def tcp_packet():
     pkt[IP].len = packet_size
     pkt[IP].chksum = None
     pkt[TCP].chksum = None
-    return payload
+    sendp(pkt, verbose=False)
 
