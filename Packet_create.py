@@ -1,7 +1,7 @@
 
 import random
 from scapy.layers.inet import IP,UDP,TCP
-from scapy.all import Raw,sendp
+from scapy.all import Raw,send
 from Config_Load import Config_Load
 import os
 
@@ -13,7 +13,7 @@ def udp_packet(dst_port):
     cfg=Config_Load()
     packet_size=int(cfg.get("packet_size"))
     ip_dst=cfg.get("ipaddr")
-    sport = random.sample(range(1,65535),1)
+    sport = random.randint(1,65535)
 
     if packet_size < IP_BASE + UDP_HDR:
         print(f"Zadána menší než standartní velikost paketu. Bude použita standartní velikost. \n "
@@ -30,13 +30,13 @@ def udp_packet(dst_port):
     pkt[IP].chksum = None
     pkt[UDP].len = None
     pkt[UDP].chksum = None
-    sendp(pkt,verbose=False)
+    send(pkt,verbose=False)
 
 def tcp_packet(dst_port):
     cfg=Config_Load()
     packet_size=int(cfg.get("packet_size"))
     ip_dst=cfg.get("ipaddr")
-    sport = random.sample(range(1,65535),1)
+    sport = random.randint(1,65535)
 
     seq=None
     IP_BASE = 20
@@ -57,5 +57,5 @@ def tcp_packet(dst_port):
     pkt[IP].len = packet_size
     pkt[IP].chksum = None
     pkt[TCP].chksum = None
-    sendp(pkt, verbose=False)
+    send(pkt, verbose=False)
 
