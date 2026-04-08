@@ -120,8 +120,9 @@ def scan_ports_udp(workers=50, timeout=0.5):
                 results[port] = ("error",str(e))
                 continue
     open_ports.sort()
-    if not open_ports:
-        raise ValueError("No open ports found.")
     dst_port = random.choice(open_ports)
+    if not open_ports:
+        print("No open ports found.Selecting random port in specified range for bandwith jamming.")
+        dst_port = random.randint(udp_start, udp_end)
     print(open_ports,results,dst_port)
     return dst_port
