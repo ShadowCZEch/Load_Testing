@@ -5,7 +5,7 @@ from scapy.all import Raw,send
 from Config_Load import Config_Load
 import os
 
-def udp_packet(dst_port):
+def udp_packet(dst_port,src_ip=None):
 
     IP_BASE = 20
     UDP_HDR = 8
@@ -25,7 +25,7 @@ def udp_packet(dst_port):
         payload = os.urandom(payload_len)
     else:
         payload = b""
-    pkt = IP(dst=ip_dst)/UDP(sport=sport, dport=dst_port)/Raw(load=payload)
+    pkt = IP(dst=ip_dst, src=src_ip) / UDP(sport=sport, dport=dst_port) / Raw(load=payload)
     pkt[IP].len = packet_size
     pkt[IP].chksum = None
     pkt[UDP].len = None

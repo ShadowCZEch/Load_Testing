@@ -3,12 +3,14 @@
 import os
 from gevent import monkey
 import time
+import queue
 from locust import User, task, events, constant
 from gevent import sleep
 from Config_Load import Config_Load
 
 monkey.patch_all()
 
+POOL_FILE = "/home/me/Desktop/ip_pool.txt"
 cfg = Config_Load()
 
 def cfg_int(key):
@@ -36,9 +38,30 @@ def cfg_str(key):
 TARGET_PORT = int(os.environ.get("TARGET_PORT", 0))
 LOCUST_MODE = os.environ.get("LOCUST_MODE")
 
+ip_queue = queue.Queue()
+
+@events.test_start.add_listener
+def on_test_start(environment, **_kwargs):
+    pool_file = os.environ.get("IP_POOL_FILE")
+    if pool_file and os.path.exists(pool_file):
+        with open(pool_file, "r") as f:
+            for line in f:
+                addr = line.strip()
+                if addr:
+                    ip_queue.put(addr)
+        print(f"[Locust] Načteno {ip_queue.qsize()} unikátních zdrojových IP.")
+    else:
+        print("[Error] Soubor s IP pool nebyl nalezen!")
+
 class UserClass(User):
 
     wait_time = constant(0)
+
+    def on_start(self):
+        try:
+            self.source_ip = ip_queue.get_nowait()
+        except queue.Empty:
+            self.source_ip = None  # Fallback
 
     @task
     def keep_send(self):
@@ -79,10 +102,4 @@ class UserClass(User):
                 except Exception as e:
                     fire_packet_event(self.environment,"UDP","udp_sent",start,exception=e)
                 sleep(0)
-
-@events.test_start.add_listener
-def on_test_start(environment, **_kwargs):
-    host = environment.host
-    mode = os.environ.get("LOCUST_MODE", "unknown")
-    print(f"\n[locust] Test starting on {host} — mode: {mode.upper()}\n")
 
