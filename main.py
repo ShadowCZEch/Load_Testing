@@ -5,7 +5,7 @@ from Config_Load import Config_Load
 from Port_scanner import scan_ports_tcp, scan_ports_udp
 import Create_IP_Pool_skript
 import Remove_IP_Pool_skript
-
+from Create_topology import create_topology_diagram
 
 def run():
     cfg = Config_Load()
@@ -14,7 +14,7 @@ def run():
     ip_end = cfg.get("source_ip_maximal")
     protocol = cfg.get("protocol", "").lower()
 
-    ip_list = Create_IP_Pool_skript.main(ip_start, ip_end, interface="ens33")
+    __ip_list = Create_IP_Pool_skript.main(ip_start, ip_end, interface="ens33")
 
     if protocol == "tcp":
         print("Starting TCP scan...")
@@ -49,6 +49,7 @@ def run():
     try:
         print(f"Running Locust on {host}...")
         subprocess.check_call(cmd, env=env)
+        create_topology_diagram()
     except KeyboardInterrupt:
         print("\nStopping Locust...")
     finally:
