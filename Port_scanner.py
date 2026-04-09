@@ -11,12 +11,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 def on_response_received(environment,protocol,start,success,error=None):
+    rt = (time.perf_counter() - start) * 1000
     name = f"{protocol.lower()}_response"
     events.request.fire(
         environment,
         request_type=protocol.upper(),
         name=name,
-        start=start,
+        response_time=rt,
+        response_length=0,
         exception=None if success else (error or Exception("No response / timeout")),
     )
 
