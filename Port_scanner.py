@@ -66,11 +66,12 @@ def scan_ports_tcp(workers=50, timeout=0.5):
     return dst_port
 
 def probe_udp_simple(ipaddr, port, timeout=0.5, environment = None):
+    start = time.perf_counter()
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
         s.settimeout(timeout)
         try:
             s.sendto(b"\x00", (ipaddr, port))
-            start = time.perf_counter()
+
             data, _ = s.recvfrom(4096)
             if environment:
                 on_response_received(environment,"UDP",start,success=True)

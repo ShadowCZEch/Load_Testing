@@ -41,7 +41,7 @@ LOCUST_MODE = os.environ.get("LOCUST_MODE")
 ip_queue = queue.Queue()
 
 @events.test_start.add_listener
-def on_test_start(environment, **_kwargs):
+def on_test_start(_environment, **_kwargs):
     pool_file = os.environ.get("IP_POOL_FILE")
     if pool_file and os.path.exists(pool_file):
         with open(pool_file, "r") as f:
@@ -54,6 +54,9 @@ def on_test_start(environment, **_kwargs):
         print("[Error] Soubor s IP pool nebyl nalezen!")
 
 class UserClass(User):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.source_ip = None
 
     wait_time = constant(0)
 
@@ -61,11 +64,10 @@ class UserClass(User):
         try:
             self.source_ip = ip_queue.get_nowait()
         except queue.Empty:
-            self.source_ip = None  # Fallback
+            self.source_ip = None
 
     @task
     def keep_send(self):
-        from Hook_system import fire_packet_event
         from Packet_create import tcp_packet, udp_packet
 
         if LOCUST_MODE == "tcp":
@@ -80,9 +82,14 @@ class UserClass(User):
                         response_length=0,
                         exception=None,
                     )
-                    fire_packet_event(self.environment,"TCP","tcp_sent",start)
                 except Exception as e:
-                    fire_packet_event(self.environment,"TCP","tcp_sent",start,exception=e)
+                    self.environment.events.request.fire(
+                        request_type="TCP",
+                        name="tcp_flood",
+                        response_time=0,
+                        response_length=0,
+                        exception=e,
+                    )
                 sleep(0)
 
 
@@ -98,8 +105,13 @@ class UserClass(User):
                         response_length=0,
                         exception=None,
                     )
-                    fire_packet_event(self.environment,"UDP","udp_sent",start)
                 except Exception as e:
-                    fire_packet_event(self.environment,"UDP","udp_sent",start,exception=e)
+                    self.environment.events.request.fire(
+                        request_type="UDP",
+                        name="udp_flood",
+                        response_time=0,
+                        response_length=0,
+                        exception=e,
+                    )
                 sleep(0)
 
