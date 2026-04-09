@@ -1,45 +1,22 @@
-import time
+
 
 from scapy.error import Scapy_Exception
 
 from Config_Load import config_load
 import random
 import socket
-from locust import events
 from scapy.layers.inet import IP,TCP,sr1
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
-def on_response_received(environment,protocol,start,success,error=None):
-    rt = (time.perf_counter() - start) * 1000
-    name = f"{protocol.lower()}_response"
-    events.request.fire(
-        environment,
-        request_type=protocol.upper(),
-        name=name,
-        response_time=rt,
-        response_length=0,
-        exception=None if success else (error or Exception("No response / timeout")),
-    )
-
 def syn_scan(ipaddr, port, timeout=0.5,environment=None):
     pkt = IP(dst=ipaddr)/TCP(dport=port,flags="S")
-    start = time.perf_counter()
     resp = sr1(pkt,timeout=timeout,verbose=False)
 
-    if resp is None:
-        if environment:
-            on_response_received(environment, "TCP", start, success=False,error=Exception("No_response"))
-        return False
-
     if resp.haslayer(TCP) and resp[TCP].flags == 0x12:
-        if environment:
-            on_response_received(environment, "TCP", start, success=True)
         rst = IP(dst=ipaddr)/TCP(dport=port,flags="R")
         sr1(rst,timeout=timeout,verbose=False)
         return True
-    if environment:
-        on_response_received(environment, "TCP", start, success=False, error=Exception("Unexpected_flag"))
     return False
 
 def scan_ports_tcp(workers=50, timeout=0.5):
@@ -77,27 +54,17 @@ def scan_ports_tcp(workers=50, timeout=0.5):
     return dst_port
 
 def probe_udp_simple(ipaddr, port, timeout=0.5, environment = None):
-    start = time.perf_counter()
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
         s.settimeout(timeout)
         try:
             s.sendto(b"\x00", (ipaddr, port))
-
             data, _ = s.recvfrom(4096)
-            if environment:
-                on_response_received(environment,"UDP",start,success=True)
-            return 'open', data, None
+
         except socket.timeout:
-            if environment:
-                on_response_received(environment,"UDP",start,success=False,error=Exception("timeout"))
             return "no_response", None, "timeout"
         except ConnectionRefusedError:
-            if environment:
-                on_response_received(environment,"UDP",start,success=False,error=Exception("ICMP_unreachable"))
             return "closed",None,"ICMP_unreachable"
         except Exception as e:
-            if environment:
-                on_response_received(environment,"UDP",start,success=False,error=e)
             return "filtered",None,str(e)
 
 def scan_ports_udp(workers=50, timeout=0.5):
