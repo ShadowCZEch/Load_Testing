@@ -14,7 +14,7 @@ def run():
     ip_end = cfg.get("source_ip_maximal")
     protocol = cfg.get("protocol", "").lower()
 
-    __ip_list = Create_IP_Pool_skript.main(ip_start, ip_end, interface="ens33")
+    __ip_list = Create_IP_Pool_skript.main(ip_start, ip_end, interface="eth2")
 
     if protocol == "tcp":
         print("Starting TCP scan...")
@@ -58,7 +58,7 @@ def run():
             Remove_IP_Pool_skript.main(
                 ip_start=ip_start,
                 ip_end=ip_end,
-                interface="ens33"
+                interface="eth2"
             )
             print("[OK] Všechny virtuální IP byly odstraněny.")
         except Exception as e:

@@ -10,7 +10,7 @@ cfg = Config_Load()
 # ---- DEFAULT KONFIGURÁCIA ----
 IP_RANGE_START = cfg.get("SOURCE_IP_MINIMAL")
 IP_RANGE_END   = cfg.get("SOURCE_IP_MAXIMAL")
-INTERFACE      = "ens33"
+INTERFACE      = "eth2"
 POOL_FILE    = os.path.join(BASE_DIR, "ip_pool.txt")
 # ------------------------------
 

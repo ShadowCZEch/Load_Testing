@@ -32,7 +32,7 @@ def _is_ipv6_source(source_ip):
 def create_topology_diagram(
     target_ip   = None,
     source_ip   = None,
-    interface   = "ens33",
+    interface   = "eth2",
     output_file = "topology_diagram.png"
 ):
     if target_ip is None:
@@ -180,7 +180,7 @@ def create_topology_diagram(
 #  INTEGRATION — PDF report
 # ============================================================
 
-def add_topology_to_report(story, styles, target_ip, source_ip, interface="ens33"):
+def add_topology_to_report(story, styles, target_ip, source_ip, interface="eth2"):
     from reportlab.platypus import Image, Paragraph, Spacer
 
     topology_file = "topology_diagram.png"
