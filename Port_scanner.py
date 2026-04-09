@@ -5,11 +5,20 @@ from scapy.error import Scapy_Exception
 from Config_Load import config_load
 import random
 import socket
-from Hook_system import on_response_received
+from locust import events
 from scapy.layers.inet import IP,TCP,sr1
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
+def on_response_received(environment,protocol,start,success,error=None):
+    name = f"{protocol.lower()}_response"
+    events.request.fire(
+        environment,
+        request_type=protocol.upper(),
+        name=name,
+        start=start,
+        exception=None if success else (error or Exception("No response / timeout")),
+    )
 
 def syn_scan(ipaddr, port, timeout=0.5,environment=None):
     pkt = IP(dst=ipaddr)/TCP(dport=port,flags="S")
