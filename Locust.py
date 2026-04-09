@@ -41,7 +41,7 @@ LOCUST_MODE = os.environ.get("LOCUST_MODE")
 ip_queue = queue.Queue()
 
 @events.test_start.add_listener
-def on_test_start(_environment, **_kwargs):
+def on_test_start(environment, **_kwargs):
     pool_file = os.environ.get("IP_POOL_FILE")
     if pool_file and os.path.exists(pool_file):
         with open(pool_file, "r") as f:
