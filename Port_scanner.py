@@ -9,12 +9,14 @@ from scapy.layers.inet import IP,TCP,sr1
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
-def syn_scan(ipaddr, port, timeout=0.5,environment=None):
-    pkt = IP(dst=ipaddr)/TCP(dport=port,flags="S")
+def syn_scan(target_ip,version, port, timeout=0.5,environment=None):
+    from scapy.all import IPv6
+    protocol = IP(dst=target_ip) if version == 4 else IPv6(dst=target_ip)
+    pkt = protocol/TCP(dport=port,flags="S")
     resp = sr1(pkt,timeout=timeout,verbose=False)
 
-    if resp.haslayer(TCP) and resp[TCP].flags == 0x12:
-        rst = IP(dst=ipaddr)/TCP(dport=port,flags="R")
+    if resp and resp.haslayer(TCP) and resp[TCP].flags == 0x12:
+        rst = IP(dst=target_ip)/TCP(dport=port,flags="R")
         sr1(rst,timeout=timeout,verbose=False)
         return True
     return False
@@ -23,6 +25,7 @@ def scan_ports_tcp(workers=50, timeout=0.5):
     open_ports = []
     cfg = config_load()
     ipaddr = cfg.get("ipaddr")
+    version = int(cfg.get("version"))
     tcp_start = cfg.get("tcp_range_start")
     tcp_end = cfg.get("tcp_range_end")
     if tcp_end < tcp_start:
@@ -32,7 +35,7 @@ def scan_ports_tcp(workers=50, timeout=0.5):
     scanned = 0
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        futures = {ex.submit(syn_scan, ipaddr, port, timeout): port for port in ports}
+        futures = {ex.submit(syn_scan, ipaddr, version, port, timeout): port for port in ports}
         for fut in as_completed(futures):
             scanned += 1
             port = futures[fut]
@@ -53,15 +56,16 @@ def scan_ports_tcp(workers=50, timeout=0.5):
     print("Randomly chosen port:",dst_port)
     return dst_port
 
-def probe_udp_simple(ipaddr, port, timeout=0.5, environment = None):
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+def probe_udp_simple(ipaddr,version, port, timeout=0.5, environment = None):
+    family = socket.AF_INET if version == 4 else socket.AF_INET6
+    with socket.socket(family, socket.SOCK_DGRAM) as s:
         s.settimeout(timeout)
         try:
             s.sendto(b"\x00", (ipaddr, port))
             data, _ = s.recvfrom(4096)
 
         except socket.timeout:
-            return "no_response", None, "timeout"
+            return "open", None, "timeout"
         except ConnectionRefusedError:
             return "closed",None,"ICMP_unreachable"
         except Exception as e:
@@ -72,6 +76,7 @@ def scan_ports_udp(workers=50, timeout=0.5):
     results = {}
     cfg = config_load()
     ipaddr = cfg.get("ipaddr")
+    version = int(cfg.get("version"))
     udp_start = cfg.get("udp_range_start")
     udp_end = cfg.get("udp_range_end")
 
@@ -82,7 +87,7 @@ def scan_ports_udp(workers=50, timeout=0.5):
     scanned = 0
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        futures = {ex.submit(probe_udp_simple,ipaddr,port,timeout): port for port in ports}
+        futures = {ex.submit(probe_udp_simple,ipaddr,version, port,timeout): port for port in ports}
         for fut in as_completed(futures):
             scanned += 1
             port = futures[fut]
