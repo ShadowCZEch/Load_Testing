@@ -41,7 +41,7 @@ def run():
 
     master_cmd = [
         sys.executable, "-m", "locust",
-        "-f", "Locust.py",
+        "-f", "Locust_tcp.py",
         "--master",
         "--headless",
         "-u", str(users),
@@ -54,7 +54,7 @@ def run():
 
     worker_cmd = [
         sys.executable, "-m", "locust",
-        "-f", "Locust.py",
+        "-f", "Locust_tcp.py",
         "--worker",
     ]
 
