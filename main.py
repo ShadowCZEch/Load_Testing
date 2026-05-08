@@ -39,7 +39,8 @@ def run():
     env["PYTHONPATH"] = os.getcwd()
     env["IP_POOL_FILE"] = "/home/me/Desktop/ip_pool.txt"
 
-    master_cmd = [
+    if protocol == "tcp":
+        master_cmd = [
         sys.executable, "-m", "locust",
         "-f", "Locust_tcp.py",
         "--master",
@@ -50,13 +51,33 @@ def run():
         "--expect-workers", str(worker_count),
         "--html", "report.html",
         "--host", host
-    ]
+        ]
 
-    worker_cmd = [
+        worker_cmd = [
         sys.executable, "-m", "locust",
         "-f", "Locust_tcp.py",
         "--worker",
-    ]
+        ]
+
+    else:
+        master_cmd = [
+        sys.executable, "-m", "locust",
+        "-f", "Locust_udp.py",
+        "--master",
+        "--headless",
+        "-u", str(users),
+        "-r", str(spawn_rate),
+        "--run-time", f"{run_time}s",
+        "--expect-workers", str(worker_count),
+        "--html", "report.html",
+        "--host", host
+        ]
+
+        worker_cmd = [
+        sys.executable, "-m", "locust",
+        "-f", "Locust_tcp.py",
+        "--worker",
+        ]
 
     processes = []
 
