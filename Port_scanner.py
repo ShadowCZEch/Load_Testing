@@ -21,13 +21,13 @@ def syn_scan(target_ip,version, port, timeout=0.5,environment=None):
         return True
     return False
 
-def scan_ports_tcp(workers=50, timeout=0.5):
+def scan_ports_tcp(range_start=None, range_end = None, host_ip=None, version=None, workers=50, timeout=0.5):
     open_ports = []
     cfg = config_load()
-    ipaddr = cfg.get("ipaddr")
-    version = int(cfg.get("version"))
-    tcp_start = cfg.get("tcp_range_start")
-    tcp_end = cfg.get("tcp_range_end")
+    ipaddr  = host_ip or cfg.get("ipaddr")
+    version = int(version or cfg.get("version"))
+    tcp_start = int(range_start or cfg.get("tcp_range_start"))
+    tcp_end   = int(range_end   or cfg.get("tcp_range_end"))
     if tcp_end < tcp_start:
         raise ValueError("'tcp_range_end' must be greater than 'tcp_range_start'.")
     ports= range(tcp_start,tcp_end)
@@ -71,14 +71,14 @@ def probe_udp_simple(ipaddr,version, port, timeout=0.5, environment = None):
         except Exception as e:
             return "filtered",None,str(e)
 
-def scan_ports_udp(workers=50, timeout=0.5):
+def scan_ports_udp(range_start = None, range_end = None, host_ip=None, version=None, workers=50, timeout=0.5):
     open_ports = []
     results = {}
     cfg = config_load()
-    ipaddr = cfg.get("ipaddr")
-    version = int(cfg.get("version"))
-    udp_start = cfg.get("udp_range_start")
-    udp_end = cfg.get("udp_range_end")
+    ipaddr  = host_ip or cfg.get("ipaddr")
+    version = int(version or cfg.get("version"))
+    udp_start = int(range_start or cfg.get("udp_range_start"))
+    udp_end   = int(range_end   or cfg.get("udp_range_end"))
 
     if udp_end < udp_start:
         raise ValueError("'udp_range_end' must be greater than 'udp_range_start'.")

@@ -1226,10 +1226,7 @@ class LocustGUI(ctk.CTk):
     # ================================================================
     def _build_page_tcp(self, parent):
         p = {}
-        p["preset_btn_widgets"] = {}
         self.pages["TCP"] = p
-        p["stage_rows"] = []
-        p["stages"] = []
         outer = ctk.CTkFrame(parent, fg_color="transparent", corner_radius=0)
         outer.grid(row=0, column=0, sticky="nsew")
         outer.grid_columnconfigure(0, weight=1)
@@ -1244,85 +1241,24 @@ class LocustGUI(ctk.CTk):
 
         # ── Define Test ───────────────────────────────────────────
         s_row = self._card_header(scroll, "Define Test", s_row)
-        card_stages = ctk.CTkFrame(scroll, fg_color=C_CARD, corner_radius=10)
-        card_stages.grid(row=s_row, column=0, padx=16, pady=(0, 4), sticky="ew")
-        card_stages.grid_columnconfigure(0, weight=1)
+        card_test = self._card(scroll, s_row)
         s_row += 1
 
-        preset_frame = ctk.CTkFrame(card_stages, fg_color="transparent")
-        preset_frame.grid(row=0, column=0, padx=12, pady=(10, 4), sticky="w")
-        for name in STAGE_PRESETS:
-            btn = ctk.CTkButton(
-                preset_frame, text=name, width=80, height=26,
-                fg_color=C_ENTRY, hover_color=C_HOVER,
-                font=ctk.CTkFont(size=11), corner_radius=6,
-                command=lambda n=name: self._load_preset(n)
-            )
-            btn.pack(side="left", padx=(0, 6))
-            p["preset_btn_widgets"][name] = btn
-
-        p["stages_frame"] = ctk.CTkFrame(card_stages, fg_color="transparent")
-        p["stages_frame"].grid(row=1, column=0, padx=12, pady=(2, 0), sticky="ew")
-        p["stages_frame"].grid_columnconfigure(0, minsize=180, weight=1)
-        p["stages_frame"].grid_columnconfigure(1, minsize=180, weight=1)
-        p["stages_frame"].grid_columnconfigure(2, minsize=180, weight=1)
-        p["stages_frame"].grid_columnconfigure(3, minsize=130, weight=0)
-        p["stages_frame"].grid_columnconfigure(4, minsize=55, weight=0)
-        p["stages_frame"].grid_columnconfigure(5, minsize=55, weight=0)
-        p["stages_frame"].grid_columnconfigure(6, minsize=30, weight=0)
-        p["hdr_min_lbl"] = None
-        p["hdr_max_lbl"] = None
-
-        for col, (txt, help_txt) in enumerate([
-            ("Duration (s)", None),
-            ("Users", None),
-            ("Spawn rate", None),
-            ("Wait mode",
-             "between – random wait between Min and Max\nconstant – fixed wait of Min seconds\nconstant_throughput – Min = target RPS per user"),
-            ("Min", "between: minimum wait (s)\nconstant: fixed wait (s)\nconstant_throughput: target RPS"),
-            ("Max", "between: maximum wait (s)\nIgnored in other modes"),
-        ]):
-            lbl = ctk.CTkLabel(
-                p["stages_frame"],
-                text=f"{txt.upper()} ⓘ" if help_txt else txt.upper(),
-                font=ctk.CTkFont(size=10, weight="bold"),
-                text_color=C_MUTED, anchor="w",
-                cursor="question_arrow" if help_txt else "arrow"
-            )
-            lbl.grid(row=0, column=col, padx=(0, 4), pady=4, sticky="w")
-            if help_txt:
-                CTkToolTip(lbl, message=help_txt, delay=0.3, x_offset=10, y_offset=-10)
-            if txt == "Min":
-                p["hdr_min_lbl"] = lbl
-            elif txt == "Max":
-                p["hdr_max_lbl"] = lbl
-
-        ctk.CTkButton(
-            card_stages, text="+ Add stage", height=28,
-            fg_color="transparent", hover_color=C_HOVER,
-            border_width=1, border_color=C_MUTED,
-            font=ctk.CTkFont(size=11), corner_radius=6,
-            command=lambda: self._add_stage_row("TCP")
-        ).grid(row=3, column=0, padx=12, pady=(6, 4), sticky="ew")
-
-        p["stages_total_lbl"] = ctk.CTkLabel(
-            card_stages, text="",
-            font=ctk.CTkFont(size=11), text_color=C_MUTED, anchor="w"
-        )
-        p["stages_total_lbl"].grid(row=4, column=0, padx=14, pady=(0, 10), sticky="w")
-
+        self._field_row(card_test, 0, "Users", "users", "10", col=0,
+                        help="Number of concurrent virtual users sending packets.")
+        self._field_row(card_test, 0, "Spawn rate", "spawn_rate", "1", col=2,
+                        help="Number of users spawned per second until target is reached.")
+        self._field_row(card_test, 1, "Duration (s)", "run_time", "60", col=0,
+                        help="Total test duration in seconds.")
+        self._field_row(card_test, 1, "Packet size (bytes)", "packet_size", "60", col=2,
+                        help="Total packet size in bytes including IP and transport headers.\nMinimum: 40 for TCP.")
         # ── Locust Parameters ─────────────────────────────────────
         s_row = self._card_header(scroll, "Locust Parameters", s_row)
         card = self._card(scroll, s_row)
         s_row += 1
-        self._field_row(card, 0, "Stop timeout (s)", "stop_timeout", "60", col=0,
-                        help="Time (seconds) Locust waits for running users to finish\ntheir current task after the test ends.\nIncrease for long-running requests.")
-        self._field_row(card, 0, "Processes", "processes", "-1", col=2,
-                        help="Number of worker processes Locust spawns.\n-1 = one process per CPU core (recommended).\n1 = single process (useful for debugging).")
-        self._field_row(card, 1, "Connect timeout (s)", "connect_timeout", "5", col=0,
-                        help="Maximum time (seconds) to establish a TCP connection.\nIncrease for slow or distant servers.")
-        self._field_row(card, 1, "Read timeout (s)", "read_timeout", "15", col=2,
-                        help="Maximum time (seconds) to wait for a server response.\nIncrease for endpoints with slow processing times.")
+
+        self._field_row(card, 0, "Stop timeout (s)", "tcp_stop_timeout", "60", col=0, help="...")
+        self._field_row(card, 0, "Processes", "tcp_processes", "-1", col=2, help="...")
 
         # ── Locustfile ────────────────────────────────────────────
         s_row = self._card_header(scroll, "Locustfile", s_row)
@@ -1374,10 +1310,7 @@ class LocustGUI(ctk.CTk):
     # ================================================================
     def _build_page_udp(self, parent):
         p = {}
-        p["preset_btn_widgets"] = {}
         self.pages["UDP"] = p
-        p["stage_rows"] = []
-        p["stages"] = []
         outer = ctk.CTkFrame(parent, fg_color="transparent", corner_radius=0)
         outer.grid(row=0, column=0, sticky="nsew")
         outer.grid_columnconfigure(0, weight=1)
@@ -1392,85 +1325,27 @@ class LocustGUI(ctk.CTk):
 
         # ── Define Test ───────────────────────────────────────────
         s_row = self._card_header(scroll, "Define Test", s_row)
-        card_stages = ctk.CTkFrame(scroll, fg_color=C_CARD, corner_radius=10)
-        card_stages.grid(row=s_row, column=0, padx=16, pady=(0, 4), sticky="ew")
-        card_stages.grid_columnconfigure(0, weight=1)
+        card_test = self._card(scroll,s_row)
         s_row += 1
 
-        preset_frame = ctk.CTkFrame(card_stages, fg_color="transparent")
-        preset_frame.grid(row=0, column=0, padx=12, pady=(10, 4), sticky="w")
-        for name in STAGE_PRESETS:
-            btn = ctk.CTkButton(
-                preset_frame, text=name, width=80, height=26,
-                fg_color=C_ENTRY, hover_color=C_HOVER,
-                font=ctk.CTkFont(size=11), corner_radius=6,
-                command=lambda n=name: self._load_preset(n)
-            )
-            btn.pack(side="left", padx=(0, 6))
-            p["preset_btn_widgets"][name] = btn
-
-        p["stages_frame"] = ctk.CTkFrame(card_stages, fg_color="transparent")
-        p["stages_frame"].grid(row=1, column=0, padx=12, pady=(2, 0), sticky="ew")
-        p["stages_frame"].grid_columnconfigure(0, minsize=180, weight=1)
-        p["stages_frame"].grid_columnconfigure(1, minsize=180, weight=1)
-        p["stages_frame"].grid_columnconfigure(2, minsize=180, weight=1)
-        p["stages_frame"].grid_columnconfigure(3, minsize=130, weight=0)
-        p["stages_frame"].grid_columnconfigure(4, minsize=55, weight=0)
-        p["stages_frame"].grid_columnconfigure(5, minsize=55, weight=0)
-        p["stages_frame"].grid_columnconfigure(6, minsize=30, weight=0)
-        p["hdr_min_lbl"] = None
-        p["hdr_max_lbl"] = None
-
-        for col, (txt, help_txt) in enumerate([
-            ("Duration (s)", None),
-            ("Users", None),
-            ("Spawn rate", None),
-            ("Wait mode",
-             "between – random wait between Min and Max\nconstant – fixed wait of Min seconds\nconstant_throughput – Min = target RPS per user"),
-            ("Min", "between: minimum wait (s)\nconstant: fixed wait (s)\nconstant_throughput: target RPS"),
-            ("Max", "between: maximum wait (s)\nIgnored in other modes"),
-        ]):
-            lbl = ctk.CTkLabel(
-                p["stages_frame"],
-                text=f"{txt.upper()} ⓘ" if help_txt else txt.upper(),
-                font=ctk.CTkFont(size=10, weight="bold"),
-                text_color=C_MUTED, anchor="w",
-                cursor="question_arrow" if help_txt else "arrow"
-            )
-            lbl.grid(row=0, column=col, padx=(0, 4), pady=4, sticky="w")
-            if help_txt:
-                CTkToolTip(lbl, message=help_txt, delay=0.3, x_offset=10, y_offset=-10)
-            if txt == "Min":
-                p["hdr_min_lbl"] = lbl
-            elif txt == "Max":
-                p["hdr_max_lbl"] = lbl
-
-        ctk.CTkButton(
-            card_stages, text="+ Add stage", height=28,
-            fg_color="transparent", hover_color=C_HOVER,
-            border_width=1, border_color=C_MUTED,
-            font=ctk.CTkFont(size=11), corner_radius=6,
-            command=lambda: self._add_stage_row("UDP")
-        ).grid(row=3, column=0, padx=12, pady=(6, 4), sticky="ew")
-
-        p["stages_total_lbl"] = ctk.CTkLabel(
-            card_stages, text="",
-            font=ctk.CTkFont(size=11), text_color=C_MUTED, anchor="w"
-        )
-        p["stages_total_lbl"].grid(row=4, column=0, padx=14, pady=(0, 10), sticky="w")
+        self._field_row(card_test, 0, "Users", "udp_users", "10", col=0,
+                        help="Number of concurrent virtual users sending packets.")
+        self._field_row(card_test, 0, "Spawn rate", "udp_spawn_rate", "1", col=2,
+                        help="Users spawned per second until target is reached.")
+        self._field_row(card_test, 1, "Duration (s)", "udp_run_time", "60", col=0,
+                        help="Total test duration in seconds.")
+        self._field_row(card_test, 1, "Packet size (bytes)", "udp_packet_size", "60", col=2,
+                        help="Total size in bytes incl. headers.\nMin: 28 for UDP.")
 
         # ── Locust Parameters ─────────────────────────────────────
         s_row = self._card_header(scroll, "Locust Parameters", s_row)
         card = self._card(scroll, s_row)
         s_row += 1
-        self._field_row(card, 0, "Stop timeout (s)", "stop_timeout", "60", col=0,
-                        help="Time (seconds) Locust waits for running users to finish\ntheir current task after the test ends.\nIncrease for long-running requests.")
-        self._field_row(card, 0, "Processes", "processes", "-1", col=2,
-                        help="Number of worker processes Locust spawns.\n-1 = one process per CPU core (recommended).\n1 = single process (useful for debugging).")
-        self._field_row(card, 1, "Connect timeout (s)", "connect_timeout", "5", col=0,
-                        help="Maximum time (seconds) to establish a TCP connection.\nIncrease for slow or distant servers.")
-        self._field_row(card, 1, "Read timeout (s)", "read_timeout", "15", col=2,
-                        help="Maximum time (seconds) to wait for a server response.\nIncrease for endpoints with slow processing times.")
+
+        self._field_row(card, 0, "Stop timeout (s)", "udp_stop_timeout", "60", col=0,
+                        help="Time Locust waits for users to finish after test ends.")
+        self._field_row(card, 0, "Processes", "udp_processes", "-1", col=2,
+                        help="Number of worker processes.\n-1 = one per CPU core.")
 
         # ── Locustfile ────────────────────────────────────────────
         s_row = self._card_header(scroll, "Locustfile", s_row)
@@ -1521,22 +1396,23 @@ class LocustGUI(ctk.CTk):
     # ── TCP/UDP reader ──────────────────────────────────────────
     def _collect_run_params(self):
         active = self._active_page
+        pfx = active.lower()
 
-        host_input = self.entries["target"].get().strip()
-
-        scan_range = self.entries["src_ports"].get().strip()
+        scan_range = self.entries.get(f"{pfx}_src_ports")
+        scan_range = scan_range.get().strip() if scan_range else ""
         if "-" in scan_range:
             range_start, range_end = scan_range.split("-", 1)
         else:
             range_start = range_end = scan_range or "1"
 
         return {
-            "host_ip": host_input,
-            "protocol": active.lower(),
-            "worker_count": self.entries["processes"].get().strip(),
-            "users": self.entries["users"].get().strip(),
-            "spawn_rate": self.entries["spawn_rate"].get().strip(),
-            "run_time": self.entries["stop_timeout"].get().strip(),
+            "host_ip": self.entries["target"].get().strip(),
+            "protocol": pfx,
+            "worker_count": self.entries[f"{pfx}_processes"].get().strip(),
+            "users": self.entries[f"{pfx}_users"].get().strip(),
+            "spawn_rate": self.entries[f"{pfx}_spawn_rate"].get().strip(),
+            "run_time": self.entries[f"{pfx}_run_time"].get().strip(),
+            "packet_size": self.entries[f"{pfx}_packet_size"].get().strip(),
             "range_start": range_start.strip(),
             "range_end": range_end.strip(),
             "ip_pool_file": os.path.join(os.getcwd(), "ip_pool.txt"),
@@ -1548,6 +1424,10 @@ class LocustGUI(ctk.CTk):
 
     def _load_preset(self, name):
         p = self.pages[self._active_page]
+
+        if "preset_btn_widgets" not in p:
+            return
+
         for n, btn in p["preset_btn_widgets"].items():
             btn.configure(
                 fg_color=C_ACTIVE if n == name else C_ENTRY,

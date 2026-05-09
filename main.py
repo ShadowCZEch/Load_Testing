@@ -28,6 +28,7 @@ def run(
     users=None,
     spawn_rate=None,
     run_time=None,
+    packet_size=None,
     range_start=None,
     range_end=None,
     ip_pool_file=None,
@@ -54,13 +55,18 @@ def run(
     if protocol == "tcp":
         print("Starting TCP scan...")
         port = scan_ports_tcp(
-            range_start or cfg.get("tcp_range_start"),
-            range_end   or cfg.get("tcp_range_end"))
+            range_start=range_start or cfg.get("tcp_range_start"),
+            range_end=range_end or cfg.get("tcp_range_end"),
+            host_ip=host_ip,
+            version=6 if ":" in host_ip else 4
+        )
     else:
         print("Starting UDP scan...")
         port = scan_ports_udp(
-            range_start or cfg.get("udp_range_start"),
-            range_end or cfg.get("udp_range_end")
+                range_start=range_start or cfg.get("udp_range_start"),
+                range_end=range_end or cfg.get("udp_range_end"),
+                host_ip=host_ip,
+                version=6 if ":" in host_ip else 4
         )
 
     host = f"{host_ip}:{port}"
@@ -68,7 +74,7 @@ def run(
     env = os.environ.copy()
     env["LOCUST_MODE"] = protocol
     env["TARGET_PORT"] = str(port)
-    env["PACKET_SIZE"]  = str(cfg.get("packet_size") or 60)
+    env["PACKET_SIZE"] = str(packet_size or cfg.get("packet_size") or 60)
     env["TARGET_HOST"] = host_ip
     env["PYTHONPATH"] = os.getcwd()
     env["IP_POOL_FILE"] = pool_file
