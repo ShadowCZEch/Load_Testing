@@ -1,4 +1,4 @@
-# locustfile.py
+# locustfile_udp.py
 
 import os
 from gevent import monkey
@@ -6,37 +6,10 @@ import time
 import queue
 from locust import User, task, events, constant
 from gevent import sleep
-from Config_Load import Config_Load
 
 monkey.patch_all()
 
-POOL_FILE = "/home/me/Desktop/ip_pool.txt"
-cfg = Config_Load()
-
-def cfg_int(key):
-    if cfg is None:
-        return None
-    k = cfg.get(key)
-    if k is None:
-        return None
-    try:
-        return int(k)
-    except (TypeError, ValueError):
-        raise ValueError(f"Invalid number format in config file")
-
-def cfg_str(key):
-    if cfg is None:
-        return None
-    k = cfg.get(key)
-    if k is None:
-        return None
-    try:
-        return str(k)
-    except (TypeError, ValueError):
-        raise ValueError(f"Invalid format in config file")
-
 TARGET_PORT = int(os.environ.get("TARGET_PORT", 0))
-LOCUST_MODE = os.environ.get("LOCUST_MODE")
 
 ip_queue = queue.Queue()
 
@@ -72,7 +45,7 @@ class UserClass(User):
 
         start = time.perf_counter()
         try:
-            udp_packet(dst_port=TARGET_PORT)
+            udp_packet(dst_port=TARGET_PORT, src_ip=self.source_ip)
             rt = (time.perf_counter() - start) * 1000
             self.environment.events.request.fire(
                 request_type="UDP",

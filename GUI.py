@@ -525,6 +525,11 @@ class LocustGUI(ctk.CTk):
 
         self._bind_scroll()
 
+        self._locustfile_paths = {
+            "TCP": None,
+            "UDP": None,
+            "HTTP": None,
+        }
     # ================================================================
     # THEME
     # ================================================================
@@ -692,11 +697,11 @@ class LocustGUI(ctk.CTk):
                 if top == 0.0 and bottom == 1.0:
                     return "break"
                 if event.num == 4:
-                    widget._parent_canvas.yview_scroll(-1, "units")
+                    widget._parent_canvas.yview_scroll(-5, "units")
                 elif event.num == 5:
-                    widget._parent_canvas.yview_scroll(1, "units")
+                    widget._parent_canvas.yview_scroll(5, "units")
                 else:
-                    units = int(-1 * (event.delta / abs(event.delta))) if event.delta != 0 else 0
+                    units = int(-1 * (event.delta / abs(event.delta)) * 5) if event.delta != 0 else 0
                     widget._parent_canvas.yview_scroll(units, "units")
                 return "break"
             try:
@@ -1179,11 +1184,11 @@ class LocustGUI(ctk.CTk):
         ctk.CTkLabel(card_lf, text="File", font=ctk.CTkFont(size=15),
                      text_color=C_LABEL, anchor="w", width=self.LBL_W
                      ).grid(row=0, column=0, padx=(16, 8), pady=10, sticky="w")
-        self._locustfile_label = ctk.CTkLabel(
+        p["locustfile_label"] = ctk.CTkLabel(
             card_lf, text="default: Locustfile_http.py",
             font=ctk.CTkFont(size=11), text_color=C_MUTED, anchor="w"
         )
-        self._locustfile_label.grid(row=0, column=1, padx=(0, 8), pady=10, sticky="ew")
+        p["locustfile_label"].grid(row=0, column=1, padx=(0, 8), pady=10, sticky="ew")
         ctk.CTkButton(card_lf, text="Browse", width=80,
                       fg_color=C_ENTRY, hover_color=C_HOVER,
                       font=ctk.CTkFont(size=12), corner_radius=6,
@@ -1327,11 +1332,11 @@ class LocustGUI(ctk.CTk):
         ctk.CTkLabel(card_lf, text="File", font=ctk.CTkFont(size=15),
                      text_color=C_LABEL, anchor="w", width=self.LBL_W
                      ).grid(row=0, column=0, padx=(16, 8), pady=10, sticky="w")
-        self._locustfile_label = ctk.CTkLabel(
-            card_lf, text="default: Locustfile_http.py",
+        p["locustfile_label"] = ctk.CTkLabel(
+            card_lf, text="default: Locust_tcp.py",
             font=ctk.CTkFont(size=11), text_color=C_MUTED, anchor="w"
         )
-        self._locustfile_label.grid(row=0, column=1, padx=(0, 8), pady=10, sticky="ew")
+        p["locustfile_label"].grid(row=0, column=1, padx=(0, 8), pady=10, sticky="ew")
         ctk.CTkButton(card_lf, text="Browse", width=80,
                       fg_color=C_ENTRY, hover_color=C_HOVER,
                       font=ctk.CTkFont(size=12), corner_radius=6,
@@ -1475,11 +1480,11 @@ class LocustGUI(ctk.CTk):
         ctk.CTkLabel(card_lf, text="File", font=ctk.CTkFont(size=15),
                      text_color=C_LABEL, anchor="w", width=self.LBL_W
                      ).grid(row=0, column=0, padx=(16, 8), pady=10, sticky="w")
-        self._locustfile_label = ctk.CTkLabel(
-            card_lf, text="default: Locustfile_http.py",
+        p["locustfile_label"] = ctk.CTkLabel(
+            card_lf, text="default: Locust_udp.py",
             font=ctk.CTkFont(size=11), text_color=C_MUTED, anchor="w"
         )
-        self._locustfile_label.grid(row=0, column=1, padx=(0, 8), pady=10, sticky="ew")
+        p["locustfile_label"].grid(row=0, column=1, padx=(0, 8), pady=10, sticky="ew")
         ctk.CTkButton(card_lf, text="Browse", width=80,
                       fg_color=C_ENTRY, hover_color=C_HOVER,
                       font=ctk.CTkFont(size=12), corner_radius=6,
@@ -1512,6 +1517,30 @@ class LocustGUI(ctk.CTk):
         p["stopbtn"].grid(row=0, column=2, padx=(4, 16), pady=8)
 
         return outer
+
+    # ── TCP/UDP reader ──────────────────────────────────────────
+    def _collect_run_params(self):
+        active = self._active_page
+
+        host_input = self.entries["target"].get().strip()
+
+        scan_range = self.entries["src_ports"].get().strip()
+        if "-" in scan_range:
+            range_start, range_end = scan_range.split("-", 1)
+        else:
+            range_start = range_end = scan_range or "1"
+
+        return {
+            "host_ip": host_input,
+            "protocol": active.lower(),
+            "worker_count": self.entries["processes"].get().strip(),
+            "users": self.entries["users"].get().strip(),
+            "spawn_rate": self.entries["spawn_rate"].get().strip(),
+            "run_time": self.entries["stop_timeout"].get().strip(),
+            "range_start": range_start.strip(),
+            "range_end": range_end.strip(),
+            "ip_pool_file": os.path.join(os.getcwd(), "ip_pool.txt"),
+        }
 
     # ================================================================
     # STAGE HELPERS
@@ -1823,13 +1852,13 @@ class LocustGUI(ctk.CTk):
             filetypes=[("Python files", "*.py"), ("All files", "*.*")]
         )
         if path:
-            self.locustfile_path = path
-            self._locustfile_label.configure(text=os.path.basename(path), text_color=C_TEXT)
-            self.write_log(f"✓ Locustfile: {os.path.basename(path)}")
+            self._locustfile_paths[self._active_page] = path
+            self.pages[self._active_page]["locustfile_label"].configure(text=os.path.basename(path), text_color=C_TEXT)
+            self.write_log(f"✓ [{self._active_page}] Locustfile: {os.path.basename(path)}")
 
     def _clear_locustfile(self):
         self.locustfile_path = None
-        self._locustfile_label.configure(text="default: Locustfile_http.py", text_color=C_MUTED)
+        self.pages[self._active_page]["locustfile_label"].configure(text="default: Locustfile_http.py", text_color=C_MUTED)
         self.write_log("↩ Locustfile reset to default")
 
     def _delete_data(self):
@@ -2484,6 +2513,13 @@ class LocustGUI(ctk.CTk):
     # ================================================================
 
     def run_test(self):
+        active = self._active_page
+        path = self._locustfile_paths.get(active)
+
+        if not path or not os.path.isfile(path):
+            self.write_log(f"✗ [{active}] No locustfile selected. Use Browse to select one before running.")
+            return
+
         self._set_stop_enabled(True)
         threading.Thread(target=self._run_test_thread, daemon=True).start()
         p = self.pages[self._active_page]
@@ -2527,6 +2563,25 @@ class LocustGUI(ctk.CTk):
             )
 
     def _run_test_thread(self):
+        # ================================================================
+        # TCP/UDP
+        # ================================================================
+        if self._active_page in ("TCP", "UDP"):
+            params = self._collect_run_params()
+            self.write_log("=" * 60)
+            self.write_log(f"▶ [{self._active_page}] Starting test on {params['host_ip']}...")
+            self.write_log("-" * 60)
+
+            import main as test_main
+            test_main.run(**params)
+
+            self.write_log("-" * 60)
+            self.write_log(f"✓ [{self._active_page}] Test completed.")
+            self.write_log("=" * 60)
+            return
+        # ================================================================
+        # HTTP
+        # ================================================================
         try:
             stages = self._save_stages()
 

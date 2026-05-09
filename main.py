@@ -1,48 +1,83 @@
 import os
 import sys
 import subprocess
+import socket
+import ipaddress
+from urllib.parse import urlparse
 from Config_Load import Config_Load
 from Port_scanner import scan_ports_tcp, scan_ports_udp
-import Create_IP_Pool_skript
-import Remove_IP_Pool_skript
-from Create_topology import create_topology_diagram
 import time
-from Network_monitor import NetworkMonitor
 
-def run():
+def resolve_host(host_input):
+    parsed = urlparse(host_input)
+    hostname = parsed.hostname or host_input.strip()
+    try:
+        ipaddress.ip_address(hostname)
+        return hostname
+    except ValueError:
+        pass
+    try:
+        return socket.gethostbyname(hostname)
+    except socket.gaierror:
+        raise ValueError(f"Could not resolve host: {host_input}")
+
+def run(
+    host_ip=None,
+    protocol=None,
+    worker_count=None,
+    users=None,
+    spawn_rate=None,
+    run_time=None,
+    range_start=None,
+    range_end=None,
+    ip_pool_file=None,
+):
+
+
 
     cfg = Config_Load()
-    host_ip = cfg.get("ipaddr")
-    ip_start = cfg.get("source_ip_minimal")
-    ip_end = cfg.get("source_ip_maximal")
-    protocol = cfg.get("protocol", "").lower()
-    worker_count = int(cfg.get("workers"))
+    host_ip = resolve_host(host_ip or cfg.get("ipaddr"))
+    protocol = (protocol or cfg.get("protocol", "")).lower()
+    worker_count = int(worker_count or cfg.get("workers"))
+    users = users or cfg.get("unique_users_count")
+    spawn_rate = spawn_rate or cfg.get("spawn_rate")
+    run_time = run_time or cfg.get("time_total")
 
-    __ip_list = Create_IP_Pool_skript.main(ip_start, ip_end, interface="eth2")
+
+    pool_file = ip_pool_file or os.path.join(os.getcwd(), "ip_pool.txt")
+    if not os.path.isfile(pool_file):
+        raise FileNotFoundError(
+            f"IP pool file not found: {pool_file}\n"
+            "Generate it first using the IP Pool section in the GUI."
+        )
 
     if protocol == "tcp":
         print("Starting TCP scan...")
-        port = scan_ports_tcp()
+        port = scan_ports_tcp(
+            range_start or cfg.get("tcp_range_start"),
+            range_end   or cfg.get("tcp_range_end"))
     else:
         print("Starting UDP scan...")
-        port = scan_ports_udp()
+        port = scan_ports_udp(
+            range_start or cfg.get("udp_range_start"),
+            range_end or cfg.get("udp_range_end")
+        )
 
     host = f"{host_ip}:{port}"
-
-    users = cfg.get("unique_users_count")
-    spawn_rate = cfg.get("spawn_rate")
-    run_time = cfg.get("time_total")
 
     env = os.environ.copy()
     env["LOCUST_MODE"] = protocol
     env["TARGET_PORT"] = str(port)
+    env["PACKET_SIZE"]  = str(cfg.get("packet_size") or 60)
+    env["TARGET_HOST"] = host_ip
     env["PYTHONPATH"] = os.getcwd()
-    env["IP_POOL_FILE"] = "/home/me/Desktop/ip_pool.txt"
+    env["IP_POOL_FILE"] = pool_file
 
-    if protocol == "tcp":
-        master_cmd = [
+    locust_file = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               "Locust_tcp.py" if protocol == "tcp" else "Locust_udp.py")
+    master_cmd = [
         sys.executable, "-m", "locust",
-        "-f", "Locust_tcp.py",
+        "-f", locust_file,
         "--master",
         "--headless",
         "-u", str(users),
@@ -51,33 +86,13 @@ def run():
         "--expect-workers", str(worker_count),
         "--html", "report.html",
         "--host", host
-        ]
+    ]
 
-        worker_cmd = [
+    worker_cmd = [
         sys.executable, "-m", "locust",
-        "-f", "Locust_tcp.py",
+        "-f", locust_file,
         "--worker",
-        ]
-
-    else:
-        master_cmd = [
-        sys.executable, "-m", "locust",
-        "-f", "Locust_udp.py",
-        "--master",
-        "--headless",
-        "-u", str(users),
-        "-r", str(spawn_rate),
-        "--run-time", f"{run_time}s",
-        "--expect-workers", str(worker_count),
-        "--html", "report.html",
-        "--host", host
-        ]
-
-        worker_cmd = [
-        sys.executable, "-m", "locust",
-        "-f", "Locust_tcp.py",
-        "--worker",
-        ]
+    ]
 
     processes = []
 
@@ -94,7 +109,6 @@ def run():
 
         master_proc.wait()
         print("Test done.")
-        create_topology_diagram()
 
     except KeyboardInterrupt:
         print("\nStopping Locust...")
@@ -104,11 +118,6 @@ def run():
             for p in processes:
                 if p.poll() is None:
                     p.terminate()
-            Remove_IP_Pool_skript.main(
-                ip_start=ip_start,
-                ip_end=ip_end,
-                interface="eth2"
-            )
             print("[OK] Všechny virtuální IP byly odstraněny.")
         except Exception as e:
             print(f"[WARN] Cleanup narazil na problém: {e}")

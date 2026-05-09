@@ -32,7 +32,7 @@ def udp_packet(dst_port,src_ip=None):
     pkt[UDP].chksum = None
     send(pkt,verbose=False)
 
-def tcp_packet(dst_port):
+def tcp_packet(dst_port, src_ip=None):
     cfg=Config_Load()
     packet_size=int(cfg.get("packet_size"))
     ip_dst=cfg.get("ipaddr")
@@ -53,7 +53,7 @@ def tcp_packet(dst_port):
         payload = b""
 
     tcp_layer = TCP(sport=sport, dport=dst_port, flags="S",seq=(seq if seq is not None else 0))
-    pkt = IP(dst=ip_dst)/tcp_layer/Raw(load=payload)
+    pkt = IP(dst=ip_dst, src=src_ip)/tcp_layer/Raw(load=payload)
     pkt[IP].len = packet_size
     pkt[IP].chksum = None
     pkt[TCP].chksum = None
