@@ -91,7 +91,8 @@ def run(
         "-r", str(spawn_rate),
         "--run-time", f"{run_time}s",
         "--expect-workers", str(worker_count),
-        "--html", "report.html",
+        "--html", os.path.join(os.path.dirname(os.path.abspath(__file__)), "report.html"),
+        "--csv", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "report"),
         "--host", host
     ]
 
@@ -125,6 +126,18 @@ def run(
             for p in processes:
                 if p.poll() is None:
                     p.terminate()
+                    report_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "report")
+                    data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+                    uid = os.getuid()
+                    gid = os.getgid()
+                    for path in [report_dir, data_dir]:
+                        if os.path.exists(path):
+                            os.chown(path, uid, gid)
+                            for root, dirs, files in os.walk(path):
+                                for d in dirs:
+                                    os.chown(os.path.join(root, d), uid, gid)
+                                for f in files:
+                                    os.chown(os.path.join(root, f), uid, gid)
             print("[OK] Všechny virtuální IP byly odstraněny.")
         except Exception as e:
             print(f"[WARN] Cleanup narazil na problém: {e}")
