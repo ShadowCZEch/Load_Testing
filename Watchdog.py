@@ -9,6 +9,7 @@ from scapy.sendrecv import sr1
 from Config_Load import Config_Load
 import ipaddress
 
+
 def one_ping(ipaddr,timeout):
     try:
         ip_ver = ipaddress.ip_address(ipaddr)
@@ -27,13 +28,13 @@ def PingSetup(ipaddr,timeout):
     one_ping(ipaddr,timeout)
     return 0.0
 
-def Watchdog():
+def Watchdog(ipaddr=None, interval=None, poll_interval=None, duration=None):
     cfg = Config_Load()
-    ipaddr = cfg.get("ipaddr")
-    interval = float(cfg.get("user_interval"))
-    poll_interval = float(cfg.get("poll_interval"))
-    ping_timeout = min(0.8, float(poll_interval))
-    timeout = max(1.0, ping_timeout)
+    ipaddr        = ipaddr       or cfg.get("ipaddr")
+    interval      = float(interval      or cfg.get("user_interval"))
+    poll_interval = float(poll_interval or cfg.get("poll_interval"))
+    ping_timeout  = min(0.8, float(poll_interval))
+    timeout       = max(1.0, ping_timeout)
 
     last_state = None
     last_report_time = PingSetup(ipaddr,timeout)
@@ -63,5 +64,8 @@ def Watchdog():
             elapsed = time.time() - start_time
             sleep_time = max(0.0, float(poll_interval - elapsed))
             time.sleep(sleep_time)
+            if duration is not None and (time.time() - start_time) >= float(duration):
+                print("\nMonitoring duration reached, stopping.")
+                break
     except KeyboardInterrupt:
         print("\nMonitoring interrupted by user.")

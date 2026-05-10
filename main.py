@@ -81,6 +81,7 @@ def run(
 
     locust_file = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                "Locust_tcp.py" if protocol == "tcp" else "Locust_udp.py")
+
     master_cmd = [
         sys.executable, "-m", "locust",
         "-f", locust_file,

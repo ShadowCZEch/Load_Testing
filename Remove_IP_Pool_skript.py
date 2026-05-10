@@ -52,6 +52,7 @@ def main(
     pool_file=POOL_FILE,
     ip_version="ipv4",
     ip_list=None,    # hotový zoznam z GUI
+    prefix_len=None,
 ):
     # ── Zostavenie zoznamu IP ──────────────────────────────────────
     if ip_list is not None:

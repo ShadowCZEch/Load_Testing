@@ -18,6 +18,8 @@ from collections import defaultdict
 from urllib.parse import urlparse
 from dotenv import load_dotenv, set_key
 from CTkToolTip import CTkToolTip
+import multiprocessing
+from Reachability           import run as run_reachability_check
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
@@ -33,7 +35,7 @@ from Locust_report_v3 import create_pdf_report
 from Create_IP_Pool_skript import main as create_pool
 from Remove_IP_Pool_skript import main as remove_pool
 from Network_monitor import NetworkMonitor
-from Watchdog import Watchdog as run_reachability_check
+from Watchdog import Watchdog
 
 DATA_DIR = os.path.join(BASE_DIR, "data")
 REPORT_DIR = os.path.join(BASE_DIR, "report")
@@ -1244,13 +1246,13 @@ class LocustGUI(ctk.CTk):
         card_test = self._card(scroll, s_row)
         s_row += 1
 
-        self._field_row(card_test, 0, "Users", "users", "10", col=0,
+        self._field_row(card_test, 0, "Users", "tcp_users", "10", col=0,
                         help="Number of concurrent virtual users sending packets.")
-        self._field_row(card_test, 0, "Spawn rate", "spawn_rate", "1", col=2,
+        self._field_row(card_test, 0, "Spawn rate", "tcp_spawn_rate", "1", col=2,
                         help="Number of users spawned per second until target is reached.")
-        self._field_row(card_test, 1, "Duration (s)", "run_time", "60", col=0,
+        self._field_row(card_test, 1, "Duration (s)", "tcp_run_time", "60", col=0,
                         help="Total test duration in seconds.")
-        self._field_row(card_test, 1, "Packet size (bytes)", "packet_size", "60", col=2,
+        self._field_row(card_test, 1, "Packet size (bytes)", "tcp_packet_size", "60", col=2,
                         help="Total packet size in bytes including IP and transport headers.\nMinimum: 40 for TCP.")
         # ── Locust Parameters ─────────────────────────────────────
         s_row = self._card_header(scroll, "Locust Parameters", s_row)
@@ -1405,11 +1407,15 @@ class LocustGUI(ctk.CTk):
         else:
             range_start = range_end = scan_range or "1"
 
+        worker_count = self.entries[f"{pfx}_processes"].get().strip()
+        if worker_count == "-1":
+            worker_count = str(multiprocessing.cpu_count())
+
         return {
             "host_ip": self.entries["target"].get().strip(),
             "protocol": pfx,
             "worker_count": self.entries[f"{pfx}_processes"].get().strip(),
-            "users": self.entries[f"{pfx}_users"].get().strip(),
+            "users": worker_count,
             "spawn_rate": self.entries[f"{pfx}_spawn_rate"].get().strip(),
             "run_time": self.entries[f"{pfx}_run_time"].get().strip(),
             "packet_size": self.entries[f"{pfx}_packet_size"].get().strip(),
@@ -2452,13 +2458,17 @@ class LocustGUI(ctk.CTk):
             self.write_log(f"▶ [{self._active_page}] Starting test on {params['host_ip']}...")
             self.write_log("-" * 60)
 
-            import main as test_main
-            test_main.run(**params)
-
-            self.write_log("-" * 60)
-            self.write_log(f"✓ [{self._active_page}] Test completed.")
-            self.write_log("=" * 60)
-            return
+            try:
+                import main as test_main
+                test_main.run(**params)
+                self.write_log("-" * 60)
+                self.write_log(f"✓ [{self._active_page}] Test completed.")
+            except Exception as e:
+                self.write_log(f"✗ Test error: {e}")
+            finally:
+                self.write_log("=" * 60)
+                self._set_stop_enabled(False)
+                return
         # ================================================================
         # HTTP
         # ================================================================
@@ -2536,7 +2546,6 @@ class LocustGUI(ctk.CTk):
             self._set_stop_enabled(False)
 
     def stop_locust(self):
-        p = {}
         if not self._stop_enabled:
             return
         if self.locust_process and self.locust_process.poll() is None:
@@ -2544,21 +2553,33 @@ class LocustGUI(ctk.CTk):
             self.write_log("⛔ Locust test stopped by user")
             self._reach_stop_event.set()
         self._set_stop_enabled(False)
+        p = self.pages[self._active_page]
         p["runbtn"].configure(state="normal")
         p["stopbtn"].configure(state="disabled")
 
     def _run_reachability(self, duration, interval):
         self._reach_stop_event.clear()
+
         try:
-            run_reachability_check(
-                source_ip=self.get("reach_src_ip") or self._get_ip_start(),
-                url=self.get("target"),
-                interval=interval,
-                duration=duration,
-                timeout=float(self.get("reach_timeout") or 5),
-                csv_file=os.path.join(DATA_DIR, "reachability.csv"),
-                stop_event=self._reach_stop_event
-            )
+            if self._active_page in ("TCP","UDP"):
+                Watchdog(
+                    ipaddr=self.get("ipaddr"),
+                    interval=interval,
+                    poll_interval=float(self.get("poll_interval") or 1.0),
+                    duration=duration
+                )
+            elif self._active_page == "HTTP":
+               run_reachability_check(
+                 source_ip=self.get("reach_src_ip") or self._get_ip_start(),
+                 url=self.get("target"),
+                 interval=interval,
+                 duration=duration,
+                 timeout=float(self.get("reach_timeout") or 5),
+                 csv_file=os.path.join(DATA_DIR, "reachability.csv"),
+                 stop_event=self._reach_stop_event
+             )
+            else:
+                self.write_log(f"✗ Unknown page: {self._active_page}")
         except Exception as e:
             self.write_log(f"✗ Reachability error: {e}")
 
