@@ -32,11 +32,15 @@ def _is_ipv6_source(source_ip):
 def create_topology_diagram(
     target_ip   = None,
     source_ip   = None,
-    interface   = "eth2",
+    interface   = None,
+    reach_src_ip = None,
     output_file = "topology_diagram.png"
 ):
     if target_ip is None:
         target_ip = cfg.get("ipaddr")
+
+    if interface is None:
+        interface = cfg.get("interface") or "eth2"
 
     if source_ip is None:
         s_min = cfg.get("source_ip_minimal")

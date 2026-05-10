@@ -2459,6 +2459,13 @@ class LocustGUI(ctk.CTk):
             self.write_log("-" * 60)
 
             try:
+                self._network_monitor = NetworkMonitor(
+                    interface=self.get("interface"),
+                    interval=1,
+                    output_file=os.path.join(DATA_DIR, "network_usage.csv")
+                )
+                self._network_monitor.start()
+
                 import main as test_main
                 test_main.run(**params)
                 self.write_log("-" * 60)
