@@ -1402,12 +1402,17 @@ class LocustGUI(ctk.CTk):
         active = self._active_page
         pfx = active.lower()
 
-        scan_range = self.entries.get(f"{pfx}_src_ports")
+        scan_range = self.entries.get("src_ports")
         scan_range = scan_range.get().strip() if scan_range else ""
-        if "-" in scan_range:
-            range_start, range_end = scan_range.split("-", 1)
+        self.write_log(f"DEBUG scan_range raw: '{scan_range}'")
+        parsed = parse_ports(scan_range)
+        self.write_log(f"DEBUG parsed: {parsed}")
+        if parsed:
+            range_start = str(min(parsed))
+            range_end = str(max(parsed))
         else:
-            range_start = range_end = scan_range or "1"
+            range_start = "1"
+            range_end = "65535"
 
         worker_count = self.entries[f"{pfx}_processes"].get().strip()
         if worker_count == "-1":
@@ -2410,12 +2415,14 @@ class LocustGUI(ctk.CTk):
 
         self._set_stop_enabled(True)
         threading.Thread(target=self._run_test_thread, daemon=True).start()
-        p = self.pages[self._active_page]
+        p = self.pages.get(self._active_page)
         p["runbtn"].configure(state="disabled")
         p["stopbtn"].configure(state="normal")
 
     def _set_stop_enabled(self, enabled):
-        p = self.pages[self._active_page]
+        p = self.pages.get(self._active_page)
+        if p is None:
+            return
         self._stop_enabled = enabled
         if enabled:
             p["runbtn"].configure(
@@ -2456,6 +2463,7 @@ class LocustGUI(ctk.CTk):
         # ================================================================
         if self._active_page in ("TCP", "UDP"):
             params = self._collect_run_params()
+            self.write_log(f"DEBUG params: {params}")
             self.write_log("=" * 60)
             self.write_log(f"▶ [{self._active_page}] Starting test on {params['host_ip']}...")
             self.write_log("-" * 60)
@@ -2467,6 +2475,15 @@ class LocustGUI(ctk.CTk):
                     output_file=os.path.join(DATA_DIR, "network_usage.csv")
                 )
                 self._network_monitor.start()
+
+                run_time = params.get("run_time")
+                interval = int(self.get("reach_interval") or 5)
+                reach_thread = threading.Thread(
+                    target=self._run_reachability, args=(run_time, interval, params.get("host_ip")), daemon=True
+                )
+                reach_thread.start()
+                print(f"DEBUG reach_thread started, active_page={self._active_page}")
+
                 start_time = datetime.now()
                 test_main.run(**params)
                 end_time = datetime.now()
@@ -2476,8 +2493,19 @@ class LocustGUI(ctk.CTk):
                     "duration": (end_time - start_time).total_seconds(),
                     "target_host": params["host_ip"],
                 }
+
+                meta_df = pd.DataFrame([{
+                    "start_time": start_time.strftime("%d-%m-%Y %H:%M:%S"),
+                    "end_time": end_time.strftime("%d-%m-%Y %H:%M:%S"),
+                    "test_type": self._active_page,
+                    "target_host": params["host_ip"],
+                    "target_ip": params["host_ip"],
+                    "used_ips": "Unknown",
+                }])
+                meta_df.to_csv(os.path.join(DATA_DIR, "report_metadata.csv"), index=False)
                 self.write_log("-" * 60)
                 self.write_log(f"✓ [{self._active_page}] Test completed.")
+                reach_thread.join(timeout=5)
             except Exception as e:
                 self.write_log(f"✗ Test error: {e}")
             finally:
@@ -2575,16 +2603,18 @@ class LocustGUI(ctk.CTk):
         p["runbtn"].configure(state="normal")
         p["stopbtn"].configure(state="disabled")
 
-    def _run_reachability(self, duration, interval):
+    def _run_reachability(self, duration, interval, ipaddr = None):
         self._reach_stop_event.clear()
-
+        self.write_log(
+            f"DEBUG: _run_reachability called, page={self._active_page}, duration={duration}, interval={interval}")
         try:
             if self._active_page in ("TCP","UDP"):
+                self.write_log("DEBUG: Starting Watchdog")
                 Watchdog(
-                    ipaddr=self.get("ipaddr"),
-                    interval=interval,
-                    poll_interval=float(self.get("poll_interval") or 1.0),
-                    duration=duration
+                    ipaddr=ipaddr,
+                    poll_interval=float(self.get("reach_interval") or 1.0),
+                    duration=duration,
+                    output_dir=DATA_DIR
                 )
             elif self._active_page == "HTTP":
                run_reachability_check(
