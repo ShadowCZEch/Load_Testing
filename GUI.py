@@ -20,6 +20,8 @@ from dotenv import load_dotenv, set_key
 from CTkToolTip import CTkToolTip
 import multiprocessing
 from Reachability           import run as run_reachability_check
+import main as test_main
+from datetime import datetime
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
@@ -527,7 +529,7 @@ class LocustGUI(ctk.CTk):
 
         self._bind_scroll()
 
-        self._locustfile_paths = {
+        self._locustfile_paths: dict[str, str | None] = {
             "TCP": None,
             "UDP": None,
             "HTTP": None,
@@ -538,7 +540,7 @@ class LocustGUI(ctk.CTk):
 
     def _change_theme(self, theme_name):
         self.write_log(f"🎨 Theme changed to: {theme_name}")
-        self.after(200, lambda: self._restart_with_theme(theme_name))
+        self.after(200, lambda: self._restart_with_theme(theme_name))   # type: ignore
 
     def _restart_with_theme(self, theme_name):
         self.destroy()
@@ -813,7 +815,7 @@ class LocustGUI(ctk.CTk):
         self._pages["UDP"] = self._build_page_udp(self.page_container)
         self._pages["Generate Report"] = self._build_page_report(self.page_container)
         self._pages["Reports"] = self._build_page_reports(self.page_container)
-        self.after(100, self._set_sash_default)
+        self.after(100, self._set_sash_default) # type: ignore
 
     def _show_page(self, name):
         for label, btn in self._nav_buttons.items():
@@ -2118,7 +2120,7 @@ class LocustGUI(ctk.CTk):
         except queue.Empty:
             pass
         finally:
-            self.after(100, self._poll_log_queue)
+            self.after(100, self._poll_log_queue)   # type: ignore
 
     def clear_log(self):
         self.log.configure(state="normal")
@@ -2465,17 +2467,26 @@ class LocustGUI(ctk.CTk):
                     output_file=os.path.join(DATA_DIR, "network_usage.csv")
                 )
                 self._network_monitor.start()
-
-                import main as test_main
+                start_time = datetime.now()
                 test_main.run(**params)
+                end_time = datetime.now()
+                self._test_meta = {
+                    "start_time": start_time.strftime("%d-%m-%Y %H:%M:%S"),
+                    "end_time": end_time.strftime("%d-%m-%Y %H:%M:%S"),
+                    "duration": (end_time - start_time).total_seconds(),
+                    "target_host": params["host_ip"],
+                }
                 self.write_log("-" * 60)
                 self.write_log(f"✓ [{self._active_page}] Test completed.")
             except Exception as e:
                 self.write_log(f"✗ Test error: {e}")
             finally:
+                if self._network_monitor:
+                    self._network_monitor.stop()
+                    self._network_monitor = None
                 self.write_log("=" * 60)
                 self._set_stop_enabled(False)
-                return
+            return
         # ================================================================
         # HTTP
         # ================================================================
