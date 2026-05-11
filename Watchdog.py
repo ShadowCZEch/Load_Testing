@@ -1,6 +1,8 @@
-import time
 from datetime import datetime
 import socket
+import csv
+import time
+from pathlib import Path
 from scapy.error import Scapy_Exception
 from scapy.layers.inet import IP, ICMP
 from scapy.layers.inet6 import IPv6, ICMPv6EchoRequest
@@ -9,7 +11,47 @@ from scapy.sendrecv import sr1
 from Config_Load import Config_Load
 import ipaddress
 
+# ================================================================
+# CSV generation header
+# ================================================================
+REACHABILITY_HEADER  = ["timestamp", "status"]
+STATE_CHANGE_HEADER  = ["timestamp", "direction"]
+SUMMARY_HEADER       = ["session_start", "metric", "value"]
 
+def _init_csv(path: Path, header: list[str]) -> None:
+    if not path.exists():
+        with path.open("w", newline="") as f:
+            csv.writer(f).writerow(header)
+
+def _overwrite_csv(path: Path, header: list[str]) -> None:
+    with path.open("w", newline="") as f:
+        csv.writer(f).writerow(header)
+
+def _append_csv(path: Path, row: list) -> None:
+    with path.open("a", newline="") as f:
+        csv.writer(f).writerow(row)
+
+
+def _write_session_separator(path: Path, session_start: str) -> None:
+    with path.open("a", newline="") as f:
+        w = csv.writer(f)
+        w.writerow([])
+        w.writerow([f"# session: {session_start}"])
+
+
+def _write_summary(path: Path, session_start: str, stats: dict,
+                   append: bool) -> None:
+    with path.open("a", newline="") as f:
+        w = csv.writer(f)
+        if append:
+            w.writerow([])
+            w.writerow([f"# session: {session_start}"])
+        for metric, value in stats.items():
+            w.writerow([session_start, metric, value])
+
+# ================================================================
+# Reachability tools
+# ================================================================
 def one_ping(ipaddr,timeout):
     try:
         ip_ver = ipaddress.ip_address(ipaddr)
@@ -28,7 +70,8 @@ def PingSetup(ipaddr,timeout):
     one_ping(ipaddr,timeout)
     return 0.0
 
-def Watchdog(ipaddr=None, interval=None, poll_interval=None, duration=None):
+def Watchdog(ipaddr=None, interval=None, poll_interval=None, duration=None,
+             output_dir: str = "data", append: bool = True):
     cfg = Config_Load()
     ipaddr        = ipaddr       or cfg.get("ipaddr")
     interval      = float(interval      or cfg.get("user_interval"))
@@ -36,29 +79,68 @@ def Watchdog(ipaddr=None, interval=None, poll_interval=None, duration=None):
     ping_timeout  = min(0.8, float(poll_interval))
     timeout       = max(1.0, ping_timeout)
 
+    if interval < poll_interval:
+        raise ValueError("poll_interval can´t have smaller value than interval.")
+
     last_state = None
     last_report_time = PingSetup(ipaddr,timeout)
     print(f"Running server monitoring on address {ipaddr} every {interval} seconds. Use Ctrl+C to stop monitoring.\n")
 
-    if interval < poll_interval:
-        raise ValueError("poll_interval can´t have smaller value than interval.")
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+
+    reachability_csv = out / "reachability.csv"
+    state_changes_csv = out / "state_changes.csv"
+    summary_csv = out / "summary.csv"
+
+    session_start = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
+
+    if append:
+        # Preserve existing data; add session marker so runs are distinguishable
+        _init_csv(reachability_csv, REACHABILITY_HEADER)
+        _init_csv(state_changes_csv, STATE_CHANGE_HEADER)
+        _init_csv(summary_csv, SUMMARY_HEADER)
+        _write_session_separator(reachability_csv, session_start)
+        _write_session_separator(state_changes_csv, session_start)
+    else:
+        # Fresh start: truncate all three files
+        _overwrite_csv(reachability_csv, REACHABILITY_HEADER)
+        _overwrite_csv(state_changes_csv, STATE_CHANGE_HEADER)
+        _overwrite_csv(summary_csv, SUMMARY_HEADER)
+
+    # counters
+    total_changes = 0
+    went_offline = 0
+    came_online = 0
+
     try:
         while True:
             start_time = time.time()
             timestamp = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
             up = one_ping(ipaddr,timeout)
+            status = "up" if up else "down"
+
+            _append_csv(reachability_csv, [timestamp, status])
 
             if last_state is None:
                 last_state = up
                 last_report_time = start_time
                 print(f"[{timestamp}]  {'Server is online' if up else 'Server is unavailable'}", flush=True)
-            else:
-                if up != last_state:
-                    last_state = up
-                    last_report_time = start_time
-                    print(f"[{timestamp}]  {'Server is back up running' if up else 'Server is unavailable'}", flush=True)
+
+            elif up != last_state:
+                direction = "down -> up" if up else "up -> down"
+                _append_csv(state_changes_csv, [timestamp, direction])
+                total_changes += 1
+                if up:
+                    came_online += 1
                 else:
-                    if (start_time - last_report_time) >= interval:
+                    went_offline += 1
+                last_state = up
+                last_report_time = start_time
+                print(f"[{timestamp}]  {'Server is back up running' if up else 'Server is unavailable'}", flush=True)
+
+            else:
+                if (start_time - last_report_time) >= interval:
                         last_report_time = start_time
                         print(f"[{timestamp}]  {'Server still running' if up else 'Server is still unavailable'}", flush=True)
             elapsed = time.time() - start_time
@@ -69,3 +151,15 @@ def Watchdog(ipaddr=None, interval=None, poll_interval=None, duration=None):
                 break
     except KeyboardInterrupt:
         print("\nMonitoring interrupted by user.")
+    finally:
+        # summary (always written, even on Ctrl+C)
+        _write_summary(summary_csv, session_start, {
+            "total_state_changes": total_changes,
+            "times_went_offline":  went_offline,
+            "times_came_online":   came_online,
+        }, append=append)
+        print(f"\nCSV files written to '{out.resolve()}':")
+        print(f"  {reachability_csv.name}   - per-poll status")
+        print(f"  {state_changes_csv.name}  - state transitions")
+        print(f"  {summary_csv.name}         - aggregate counters")
+
