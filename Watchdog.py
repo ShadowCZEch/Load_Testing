@@ -140,15 +140,4 @@ def Watchdog(ipaddr=None, poll_interval=None, duration=None,
                 break
     except KeyboardInterrupt:
         print("\nMonitoring interrupted by user.")
-    finally:
-        # summary (always written, even on Ctrl+C)
-        _write_summary(summary_csv, session_start, {
-            "total_state_changes": total_changes,
-            "times_went_offline":  went_offline,
-            "times_came_online":   came_online,
-        }, append=append)
-        print(f"\nCSV files written to '{out.resolve()}':")
-        print(f"  {reachability_csv.name}   - per-poll status")
-        print(f"  {state_changes_csv.name}  - state transitions")
-        print(f"  {summary_csv.name}         - aggregate counters")
 
