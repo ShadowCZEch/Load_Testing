@@ -7,8 +7,6 @@ from scapy.error import Scapy_Exception
 from scapy.layers.inet import IP, ICMP
 from scapy.layers.inet6 import IPv6, ICMPv6EchoRequest
 from scapy.sendrecv import sr1
-
-from Config_Load import Config_Load
 import ipaddress
 
 # ================================================================
@@ -66,25 +64,19 @@ def one_ping(ipaddr,timeout):
     except (ValueError, Scapy_Exception, OSError, socket.error):
         return False
 
-def PingSetup(ipaddr,timeout):
-    one_ping(ipaddr,timeout)
-    return 0.0
-
-def Watchdog(ipaddr=None, interval=None, poll_interval=None, duration=None,
+def Watchdog(ipaddr=None, poll_interval=None, duration=None,
              output_dir: str = "data", append: bool = True):
-    cfg = Config_Load()
-    ipaddr        = ipaddr       or cfg.get("ipaddr")
-    interval      = float(interval      or cfg.get("user_interval"))
-    poll_interval = float(poll_interval or cfg.get("poll_interval"))
-    ping_timeout  = min(0.8, float(poll_interval))
+
+    if not poll_interval:
+        raise ValueError("poll_interval must be provided.")
+
+    if not ipaddr:
+        raise ValueError("ipaddr must be provided.")
+
+    poll_interval = float(poll_interval)
+    ping_timeout  = min(0.8, poll_interval)
     timeout       = max(1.0, ping_timeout)
 
-    if interval < poll_interval:
-        raise ValueError("poll_interval can´t have smaller value than interval.")
-
-    last_state = None
-    last_report_time = PingSetup(ipaddr,timeout)
-    print(f"Running server monitoring on address {ipaddr} every {interval} seconds. Use Ctrl+C to stop monitoring.\n")
 
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -112,6 +104,9 @@ def Watchdog(ipaddr=None, interval=None, poll_interval=None, duration=None,
     total_changes = 0
     went_offline = 0
     came_online = 0
+    last_state = None
+
+    print(f"Running server monitoring on {ipaddr}, probing every {poll_interval}s.")
 
     try:
         while True:
@@ -124,7 +119,6 @@ def Watchdog(ipaddr=None, interval=None, poll_interval=None, duration=None,
 
             if last_state is None:
                 last_state = up
-                last_report_time = start_time
                 print(f"[{timestamp}]  {'Server is online' if up else 'Server is unavailable'}", flush=True)
 
             elif up != last_state:
@@ -136,13 +130,8 @@ def Watchdog(ipaddr=None, interval=None, poll_interval=None, duration=None,
                 else:
                     went_offline += 1
                 last_state = up
-                last_report_time = start_time
                 print(f"[{timestamp}]  {'Server is back up running' if up else 'Server is unavailable'}", flush=True)
 
-            else:
-                if (start_time - last_report_time) >= interval:
-                        last_report_time = start_time
-                        print(f"[{timestamp}]  {'Server still running' if up else 'Server is still unavailable'}", flush=True)
             elapsed = time.time() - start_time
             sleep_time = max(0.0, float(poll_interval - elapsed))
             time.sleep(sleep_time)
