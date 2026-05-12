@@ -431,6 +431,9 @@ def load_reachability_data(reach_file):
         if df.empty:
             return None, None, None
 
+        if "status_code" not in df.columns:
+            return None, None, None
+
         # Reachable = only 2xx (not 429, not 3xx)
         df["reachable"] = (df["status_code"] >= 200) & (df["status_code"] < 300)
         reachable_count   = int(df["reachable"].sum())
@@ -440,6 +443,81 @@ def load_reachability_data(reach_file):
         return reachable_count, unreachable_count, df
     except Exception as e:
         print(f"Error loading reachability data: {e}")
+        return None, None, None
+
+# ================================================================
+# TCP/UDP Watchdog reachability parser
+# ================================================================
+def load_watchdog_reachability(reach_path):
+    """
+    Reads reachability.csv, takes only the last session,
+    and computes stats + state change log.
+    Returns: (df, stats_dict, state_changes_list) or (None, None, None)
+    """
+    if not os.path.exists(reach_path):
+        return None, None, None
+    try:
+        rows = []
+        with open(reach_path, "r") as f:
+            last_session_rows = []
+            current_session  = []
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                if line.startswith("# session:"):
+                    if current_session:
+                        last_session_rows = current_session
+                    current_session = []
+                    continue
+                if line == "timestamp,status":
+                    continue
+                parts = line.split(",", 1)
+                if len(parts) == 2:
+                    current_session.append({"timestamp": parts[0], "status": parts[1]})
+            # last session in file
+            if current_session:
+                last_session_rows = current_session
+
+        if not last_session_rows:
+            return None, None, None
+
+        df = pd.DataFrame(last_session_rows)
+        total     = len(df)
+        up_count  = (df["status"] == "up").sum()
+        down_count= total - up_count
+        pct_up    = round(up_count   / total * 100, 1) if total > 0 else 0.0
+        pct_down  = round(down_count / total * 100, 1) if total > 0 else 0.0
+
+        # Detect state changes
+        state_changes = []
+        went_down = 0
+        came_up   = 0
+        prev = None
+        for _, row in df.iterrows():
+            curr = row["status"]
+            if prev is not None and curr != prev:
+                direction = "up → down" if curr == "down" else "down → up"
+                state_changes.append({"timestamp": row["timestamp"], "direction": direction})
+                if curr == "down":
+                    went_down += 1
+                else:
+                    came_up += 1
+            prev = curr
+
+        stats = {
+            "total_changes": len(state_changes),
+            "went_down":     went_down,
+            "came_up":       came_up,
+            "pct_up":        pct_up,
+            "pct_down":      pct_down,
+            "up_count":      int(up_count),
+            "down_count":    int(down_count),
+        }
+        return df, stats, state_changes
+
+    except Exception as e:
+        print(f"Failed to load watchdog reachability: {e}")
         return None, None, None
 
 def add_reachability_delay_chart(df, story, reach_timeout_s=None):
@@ -1118,6 +1196,7 @@ def create_pdf_report(stats_file, history_file, output_file,
     story.append(Spacer(1, 8))
     story.append(make_info_table([
         [Paragraph("Test Type",         S["label"]), Paragraph(display_test_type,              S["value"])],
+        [Paragraph("Protocol",          S["label"]), Paragraph(test_type_meta,                 S["value"])],
         [Paragraph("Target Host",       S["label"]), Paragraph(str(target_host),               S["value"])],
         [Paragraph("Target IP",         S["label"]), Paragraph(str(resolved_target_ip),        S["value"])],
         [Paragraph("IP Version",        S["label"]), Paragraph(ip_version,                     S["value"])],
@@ -1232,107 +1311,108 @@ def create_pdf_report(stats_file, history_file, output_file,
         story.append(PageBreak())
 
     # ── REACHABILITY  (pie chart + timeline) ──────────────────────
-    p_pie = os.path.join(REPORT_DIR, "chart_pie.png")
-    story.append(ColorBand("  Reachability"))
-    story.append(Spacer(1, 10))
+    if test_type_meta not in ("TCP", "UDP"):
+        p_pie = os.path.join(REPORT_DIR, "chart_pie.png")
+        story.append(ColorBand("  Reachability"))
+        story.append(Spacer(1, 10))
 
-    if reach_reachable is not None and reach_df is not None:
-        # Multi-category pie chart — matches delay chart categories exactly
-        from collections import Counter
+        if reach_reachable is not None and reach_df is not None:
+            # Multi-category pie chart — matches delay chart categories exactly
+            from collections import Counter
 
-        def _classify_pie(code):
-            if 200 <= code < 300:
-                return "reachable"
-            elif code == 429:
-                return "rate_limited"
-            elif code == 0:
-                return "timeout"
-            elif 500 <= code < 600:
-                return "error_5xx"
-            else:
-                return "error_other"
+            def _classify_pie(code):
+                if 200 <= code < 300:
+                    return "reachable"
+                elif code == 429:
+                    return "rate_limited"
+                elif code == 0:
+                    return "timeout"
+                elif 500 <= code < 600:
+                    return "error_5xx"
+                else:
+                    return "error_other"
 
-        counts = Counter(reach_df["status_code"].apply(_classify_pie))
-        pie_total = sum(counts.values())
+            counts = Counter(reach_df["status_code"].apply(_classify_pie))
+            pie_total = sum(counts.values())
 
-        mapping = {
-            "reachable":    ("Reachable (2xx)",       "#34A853"),
-            "rate_limited": ("Rate-limited (429)",    "#F9AB00"),
-            "timeout":      ("Timeout / No response", "#FF6D00"),
-            "error_5xx":    ("Server error (5xx)",    "#EA4335"),
-            "error_other":  ("Other error (4xx)",     "#9E9E9E"),
-        }
+            mapping = {
+                "reachable":    ("Reachable (2xx)",       "#34A853"),
+                "rate_limited": ("Rate-limited (429)",    "#F9AB00"),
+                "timeout":      ("Timeout / No response", "#FF6D00"),
+                "error_5xx":    ("Server error (5xx)",    "#EA4335"),
+                "error_other":  ("Other error (4xx)",     "#9E9E9E"),
+            }
 
-        labels_pie, sizes_pie, colors_pie = [], [], []
-        for cat, (label, color) in mapping.items():
-            if counts.get(cat, 0) > 0:
-                labels_pie.append(f"{label}\n({counts[cat]})")
-                sizes_pie.append(counts[cat])
-                colors_pie.append(color)
+            labels_pie, sizes_pie, colors_pie = [], [], []
+            for cat, (label, color) in mapping.items():
+                if counts.get(cat, 0) > 0:
+                    labels_pie.append(f"{label}\n({counts[cat]})")
+                    sizes_pie.append(counts[cat])
+                    colors_pie.append(color)
 
-        fig, ax = plt.subplots(figsize=(5, 3.5))
-        wedges, _, autotexts = ax.pie(
-            sizes_pie,
-            colors=colors_pie,
-            startangle=90,
-            autopct="%1.1f%%",
-            pctdistance=0.75,
-            wedgeprops={"edgecolor": "white", "linewidth": 2}
-        )
-        for a in autotexts:
-            a.set_fontsize(8)
-            a.set_color("white")
-            a.set_fontweight("bold")
-        ax.legend(
-            wedges, labels_pie,
-            loc="lower center",
-            bbox_to_anchor=(0.5, -0.22),
-            ncol=3,
-            fontsize=7.5,
-            framealpha=0.9,
-            frameon=True,
-            edgecolor="#DADCE0",
-        )
-        ax.set_title("Reachability Overview", fontsize=11,
-                     fontweight="bold", color="#202124")
-        fig.patch.set_facecolor("white")
-        plt.subplots_adjust(bottom=0.22)
-        save_chart(p_pie, dpi=220)
-        story.append(Image(p_pie, width=320, height=280))
-        story.append(Spacer(1, 4))
-    else:
-        # Fallback — no reachability.csv, use Locust stats (2 categories only)
-        pie_reachable   = success
-        pie_unreachable = fail_count
-        pie_total       = req_count
-        sizes_pie  = [pie_reachable, pie_unreachable] if pie_total > 0 else [1, 0]
-        labels_pie = ["Reachable", "Unreachable"]
-        colors_pie = ["#34A853", "#EA4335"]
+            fig, ax = plt.subplots(figsize=(5, 3.5))
+            wedges, _, autotexts = ax.pie(
+                sizes_pie,
+                colors=colors_pie,
+                startangle=90,
+                autopct="%1.1f%%",
+                pctdistance=0.75,
+                wedgeprops={"edgecolor": "white", "linewidth": 2}
+            )
+            for a in autotexts:
+                a.set_fontsize(8)
+                a.set_color("white")
+                a.set_fontweight("bold")
+            ax.legend(
+                wedges, labels_pie,
+                loc="lower center",
+                bbox_to_anchor=(0.5, -0.22),
+                ncol=3,
+                fontsize=7.5,
+                framealpha=0.9,
+                frameon=True,
+                edgecolor="#DADCE0",
+            )
+            ax.set_title("Reachability Overview", fontsize=11,
+                         fontweight="bold", color="#202124")
+            fig.patch.set_facecolor("white")
+            plt.subplots_adjust(bottom=0.22)
+            save_chart(p_pie, dpi=220)
+            story.append(Image(p_pie, width=320, height=280))
+            story.append(Spacer(1, 4))
+        else:
+            # Fallback — no reachability.csv, use Locust stats (2 categories only)
+            pie_reachable   = success
+            pie_unreachable = fail_count
+            pie_total       = req_count
+            sizes_pie  = [pie_reachable, pie_unreachable] if pie_total > 0 else [1, 0]
+            labels_pie = ["Reachable", "Unreachable"]
+            colors_pie = ["#34A853", "#EA4335"]
 
-        fig, ax = plt.subplots(figsize=(5, 3.5))
-        wedges, _, autotexts = ax.pie(
-            sizes_pie, colors=colors_pie, startangle=90,
-            autopct="%1.1f%%", pctdistance=0.75,
-            wedgeprops={"edgecolor": "white", "linewidth": 2}
-        )
-        for i, a in enumerate(autotexts):
-            a.set_fontsize(9)
-            a.set_text(f"{labels_pie[i]}\n{a.get_text()}")
-            a.set_color("white")
-            a.set_fontweight("bold")
-        ax.set_title("Reachable vs Unreachable", fontsize=11,
-                     fontweight="bold", color="#202124")
-        fig.patch.set_facecolor("white")
-        save_chart(p_pie, dpi=220)
-        story.append(Image(p_pie, width=320, height=260))
-        story.append(Spacer(1, 4))
-        story.append(Paragraph(
-            "reachability.csv not found — fallback to Locust request statistics "
-            f"({pie_reachable} success, {pie_unreachable} failures)",
-            ParagraphStyle("src_note", fontSize=8, textColor=C_TEXT_MUTED, alignment=TA_CENTER)
-        ))
+            fig, ax = plt.subplots(figsize=(5, 3.5))
+            wedges, _, autotexts = ax.pie(
+                sizes_pie, colors=colors_pie, startangle=90,
+                autopct="%1.1f%%", pctdistance=0.75,
+                wedgeprops={"edgecolor": "white", "linewidth": 2}
+            )
+            for i, a in enumerate(autotexts):
+                a.set_fontsize(9)
+                a.set_text(f"{labels_pie[i]}\n{a.get_text()}")
+                a.set_color("white")
+                a.set_fontweight("bold")
+            ax.set_title("Reachable vs Unreachable", fontsize=11,
+                         fontweight="bold", color="#202124")
+            fig.patch.set_facecolor("white")
+            save_chart(p_pie, dpi=220)
+            story.append(Image(p_pie, width=320, height=260))
+            story.append(Spacer(1, 4))
+            story.append(Paragraph(
+                "reachability.csv not found — fallback to Locust request statistics "
+                f"({pie_reachable} success, {pie_unreachable} failures)",
+                ParagraphStyle("src_note", fontSize=8, textColor=C_TEXT_MUTED, alignment=TA_CENTER)
+            ))
 
-    story.append(Spacer(1, 10))
+        story.append(Spacer(1, 10))
 
     # Timeline and delay chart (only if reachability.csv available)
     if reach_df is not None:
@@ -1340,6 +1420,63 @@ def create_pdf_report(stats_file, history_file, output_file,
 
     story.append(PageBreak())
 
+    # ── TCP/UDP Watchdog reachability ─────────────────────────
+    if test_type_meta in ("TCP", "UDP"):
+        wd_df, wd_stats, wd_changes = load_watchdog_reachability(reach_file)
+
+        if wd_df is not None and wd_stats is not None:
+            story.append(ColorBand("  Reachability (Watchdog)"))
+            story.append(Spacer(1, 10))
+
+            # ── Pie chart ──────────────────────────────────────
+            fig, ax = plt.subplots(figsize=(4, 3))
+            sizes = [wd_stats["up_count"], wd_stats["down_count"]]
+            labels = [f"Up ({wd_stats['pct_up']}%)", f"Down ({wd_stats['pct_down']}%)"]
+            pie_colors = ["#34A853", "#EA4335"]
+            wedges, _, autotexts = ax.pie(
+                sizes, colors=pie_colors, startangle=90,
+                autopct="%1.1f%%", pctdistance=0.75,
+                wedgeprops={"edgecolor": "white", "linewidth": 2}
+            )
+            for a in autotexts:
+                a.set_fontsize(9)
+                a.set_color("white")
+                a.set_fontweight("bold")
+            ax.legend(wedges, labels, loc="lower center",
+                      bbox_to_anchor=(0.5, -0.15), ncol=2, fontsize=8)
+            ax.set_title("Reachability Overview", fontsize=11,
+                         fontweight="bold", color="#202124")
+            fig.patch.set_facecolor("white")
+            p_wd_pie = os.path.join(REPORT_DIR, "watchdog_pie.png")
+            save_chart(p_wd_pie, dpi=220)
+            story.append(Image(p_wd_pie, width=280, height=220))
+            story.append(Spacer(1, 8))
+            # ── Summary table ──────────────────────────────────
+            story.append(make_info_table([
+                [Paragraph("Total state changes", S["label"]), Paragraph(str(wd_stats["total_changes"]), S["value"])],
+                [Paragraph("Went down (up→down)", S["label"]), Paragraph(str(wd_stats["went_down"]), S["value"])],
+                [Paragraph("Came up (down→up)", S["label"]), Paragraph(str(wd_stats["came_up"]), S["value"])],
+                [Paragraph("% Up", S["label"]), Paragraph(f"{wd_stats['pct_up']}%", S["value"])],
+                [Paragraph("% Down", S["label"]), Paragraph(f"{wd_stats['pct_down']}%", S["value"])],
+            ], col_widths=[160, None]))
+            story.append(Spacer(1, 10))
+
+            # ── State change log (if any) ──────────────────────
+            if wd_changes:
+                story.append(Paragraph("State Change Log", S["label"]))
+                story.append(Spacer(1, 4))
+                story.append(make_info_table(
+                    [[Paragraph("Timestamp", S["label"]), Paragraph("Event", S["label"])]] +
+                    [[Paragraph(c["timestamp"], S["value"]), Paragraph(c["direction"], S["value"])]
+                     for c in wd_changes],
+                    col_widths=[160, None]
+                ))
+            else:
+                story.append(Paragraph("No state changes detected during this session.", S["value"]))
+
+            story.append(Spacer(1, 14))
+            story.append(PageBreak())
+    # ───────────────────────────────────────────────────────────
     # ── TIME SERIES CHARTS ────────────────────────────────────────
     if os.path.exists(history_file):
         history_df = pd.read_csv(history_file)
@@ -1362,7 +1499,7 @@ def create_pdf_report(stats_file, history_file, output_file,
 
     for f in ["chart_pie.png", "chart_rps_failures.png", "chart_response_times.png",
               "chart_users.png", "chart_network_total.png", "chart_network_speed.png",
-              "chart_reach_timeline.png", "chart_reach_delay.png", "topology_diagram.png"]:
+              "chart_reach_timeline.png", "chart_reach_delay.png", "topology_diagram.png","watchdog_pie.png"]:
         full_path = os.path.join(REPORT_DIR, f)
         if os.path.exists(full_path):
             os.remove(full_path)
