@@ -1042,6 +1042,19 @@ def create_pdf_report(stats_file, history_file, output_file,
     display_test_type  = test_type if (test_type and test_type.strip()) else test_type_meta
     duration           = compute_duration(start_time, end_time)
     resolved_target_ip = target_ip or target_ip_meta
+
+    # ── TCP/UDP overrides ──────────────────────────────────────
+    ip_pool_count = None
+    if test_type_meta in ("TCP", "UDP"):
+        try:
+            _meta = pd.read_csv(meta_file).iloc[0]
+            duration = f"{float(_meta.get('duration', 0)):.1f} s" if _meta.get("duration") else duration
+            ip_pool_count = int(_meta.get("ip_pool_count", 0)) or None
+            avg_size = int(_meta.get("packet_size", 0))
+        except Exception:
+            pass
+    # ───────────────────────────────────────────────────────────
+
     if source_ip:
         used_ips = source_ip
     elif used_ips in ("Unknown", "", "nan", None):
