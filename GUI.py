@@ -4,6 +4,7 @@ import tkinter.filedialog as fd
 import customtkinter as ctk
 import subprocess
 import threading
+import ipaddress
 import sys
 import os
 import time
@@ -12,6 +13,7 @@ import socket
 import shutil
 import pandas as pd
 import csv
+import signal
 import glob
 import json
 from collections import defaultdict
@@ -26,7 +28,7 @@ from datetime import datetime
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(BASE_DIR, "network"))
 sys.path.insert(0, os.path.join(BASE_DIR, "report"))
 IP_POOL_DIR = os.path.join(BASE_DIR, "IP_pool")
@@ -39,126 +41,144 @@ from Remove_IP_Pool_skript import main as remove_pool
 from Network_monitor import NetworkMonitor
 from Watchdog import Watchdog
 
-DATA_DIR = os.path.join(BASE_DIR, "data")
+DATA_DIR   = os.path.join(BASE_DIR, "data")
 REPORT_DIR = os.path.join(BASE_DIR, "report")
 
 # ── Themes ─────────────────────────────────────────────────────────
 THEMES = {
     "Locust Dark": {
-        "BG_SIDEBAR": "#121212",
-        "BG_MAIN": "#111111",
-        "BG_CARD": "#1a1a1a",
-        "ACCENT": "#2a5f3a",
-        "ACCENT_HOVER": "#1e4a2c",
-        "FG_TEXT": "#ffffff",
-        "FG_MUTED": "#888888",
-        "FG_LABEL": "#cccccc",
-        "FG_HEADER": "#2a5f3a",
-        "BG_INPUT": "#242424",
-        "BTN_DANGER": "#922b21",
-        "BTN_START": "#2a5f3a",
-        "BTN_REPORT": "#7D3C98",
-        "BTN_SETUP": "#2a5f3a",
+        "BG_SIDEBAR":  "#121212",
+        "BG_MAIN":     "#111111",
+        "BG_CARD":     "#1a1a1a",
+        "ACCENT":      "#2a5f3a",
+        "ACCENT_HOVER":"#1e4a2c",
+        "FG_TEXT":     "#ffffff",
+        "FG_MUTED":    "#888888",
+        "FG_LABEL":    "#cccccc",
+        "FG_HEADER":   "#2a5f3a",
+        "BG_INPUT":    "#242424",
+        "BTN_DANGER":  "#922b21",
+        "BTN_START":   "#2a5f3a",
+        "BTN_REPORT":  "#7D3C98",
+        "BTN_SETUP":   "#2a5f3a",
     },
     "Navy Blue": {
-        "BG_SIDEBAR": "#222831",
-        "BG_MAIN": "#1c2128",
-        "BG_CARD": "#222831",
-        "ACCENT": "#23395B",
+        "BG_SIDEBAR":   "#222831",
+        "BG_MAIN":      "#1c2128",
+        "BG_CARD":      "#222831",
+        "ACCENT":       "#23395B",
         "ACCENT_HOVER": "#23395B",
-        "FG_TEXT": "#DBD4D3",
-        "FG_MUTED": "#8899a6",
-        "FG_LABEL": "#FFFFFF",
-        "FG_HEADER": "#FFFFFF",
-        "BG_INPUT": "#2d3340",
-        "BTN_DANGER": "#922b21",
-        "BTN_START": "#23395B",
-        "BTN_REPORT": "#23395B",
-        "BTN_SETUP": "#23395B",
+        "FG_TEXT":      "#DBD4D3",
+        "FG_MUTED":     "#8899a6",
+        "FG_LABEL":     "#FFFFFF",
+        "FG_HEADER":    "#FFFFFF",
+        "BG_INPUT":     "#2d3340",
+        "BTN_DANGER":   "#922b21",
+        "BTN_START":    "#23395B",
+        "BTN_REPORT":   "#23395B",
+        "BTN_SETUP":    "#23395B",
     },
-    "Discord Light": {
-        "BG_SIDEBAR": "#282b30",
-        "BG_MAIN": "#36393e",
-        "BG_CARD": "#424549",
-        "ACCENT": "#7289da",
+    "Light": {
+        "BG_SIDEBAR":   "#282b30",
+        "BG_MAIN":      "#36393e",
+        "BG_CARD":      "#424549",
+        "ACCENT":       "#7289da",
         "ACCENT_HOVER": "#5b73c7",
-        "FG_TEXT": "#dcddde",
-        "FG_MUTED": "#72767d",
-        "FG_LABEL": "#b9bbbe",
-        "FG_HEADER": "#7289da",
-        "BG_INPUT": "#1e2124",
-        "BTN_DANGER": "#ed4245",
-        "BTN_START": "#7289da",
-        "BTN_REPORT": "#7289da",
-        "BTN_SETUP": "#7289da",
+        "FG_TEXT":      "#dcddde",
+        "FG_MUTED":     "#72767d",
+        "FG_LABEL":     "#b9bbbe",
+        "FG_HEADER":    "#7289da",
+        "BG_INPUT":     "#1e2124",
+        "BTN_DANGER":   "#ed4245",
+        "BTN_START":    "#7289da",
+        "BTN_REPORT":   "#7289da",
+        "BTN_SETUP":    "#7289da",
     },
-    "Discord Darkest": {
-        "BG_SIDEBAR": "#121214",
-        "BG_MAIN": "#1a1a1e",
-        "BG_CARD": "#242428",
-        "ACCENT": "#5b73c7",
+    "Darkest": {
+        "BG_SIDEBAR":   "#121214",
+        "BG_MAIN":      "#1a1a1e",
+        "BG_CARD":      "#242428",
+        "ACCENT":       "#5b73c7",
         "ACCENT_HOVER": "#7289da",
-        "FG_TEXT": "#dcddde",
-        "FG_MUTED": "#72767d",
-        "FG_LABEL": "#b9bbbe",
-        "FG_HEADER": "#7289da",
-        "BG_INPUT": "#0d0e10",
-        "BTN_DANGER": "#ed4245",
-        "BTN_START": "#5b73c7",
-        "BTN_REPORT": "#5b73c7",
-        "BTN_SETUP": "#5b73c7",
+        "FG_TEXT":      "#dcddde",
+        "FG_MUTED":     "#72767d",
+        "FG_LABEL":     "#b9bbbe",
+        "FG_HEADER":    "#7289da",
+        "BG_INPUT":     "#0d0e10",
+        "BTN_DANGER":   "#ed4245",
+        "BTN_START":    "#5b73c7",
+        "BTN_REPORT":   "#5b73c7",
+        "BTN_SETUP":    "#5b73c7",
     },
-    "Netflix": {
-        "BG_SIDEBAR": "#141414",
-        "BG_MAIN": "#181818",
-        "BG_CARD": "#222222",
-        "ACCENT": "#800000",
+    "redflix": {
+        "BG_SIDEBAR":   "#141414",
+        "BG_MAIN":      "#181818",
+        "BG_CARD":      "#222222",
+        "ACCENT":       "#800000",
         "ACCENT_HOVER": "#b20710",
-        "FG_TEXT": "#ffffff",
-        "FG_MUTED": "#808080",
-        "FG_LABEL": "#b3b3b3",
-        "FG_HEADER": "#ffffff",
-        "BG_INPUT": "#0d0d0d",
-        "BTN_DANGER": "#A40031",
-        "BTN_START": "#015041",
-        "BTN_REPORT": "#015041",
-        "BTN_SETUP": "#015041",
+        "FG_TEXT":      "#ffffff",
+        "FG_MUTED":     "#808080",
+        "FG_LABEL":     "#b3b3b3",
+        "FG_HEADER":    "#ffffff",
+        "BG_INPUT":     "#0d0d0d",
+        "BTN_DANGER":   "#A40031",
+        "BTN_START":    "#015041",
+        "BTN_REPORT":   "#015041",
+        "BTN_SETUP":    "#015041",
     },
 }
 
 STAGE_PRESETS = {
-    "Flat": [{"duration": 300, "users": 50, "spawn_rate": 5, "wait_mode": "between", "wait_min": "1", "wait_max": "3"}],
+    "Flat": [
+        {"duration": 300, "users": 50, "spawn_rate": 5,
+         "wait_mode": "between", "wait_min": "1", "wait_max": "3"}
+    ],
 
     "Stress": [
-        {"duration": 60, "users": 10, "spawn_rate": 5, "wait_mode": "constant", "wait_min": "1", "wait_max": "3"},
-        {"duration": 120, "users": 50, "spawn_rate": 10, "wait_mode": "constant", "wait_min": "0.5", "wait_max": "2"},
-        {"duration": 180, "users": 100, "spawn_rate": 20, "wait_mode": "constant", "wait_min": "0.5", "wait_max": "2"},
-        {"duration": 300, "users": 300, "spawn_rate": 50, "wait_mode": "constant", "wait_min": "0.1", "wait_max": "1"},
-        {"duration": 360, "users": 1, "spawn_rate": 10, "wait_mode": "constant", "wait_min": "1", "wait_max": "3"}],
+        {"duration": 60,  "users": 10,  "spawn_rate": 5,
+         "wait_mode": "constant", "wait_min": "1",   "wait_max": "3"},
+        {"duration": 60,  "users": 50,  "spawn_rate": 10,
+         "wait_mode": "constant", "wait_min": "0.5", "wait_max": "2"},
+        {"duration": 60,  "users": 100, "spawn_rate": 20,
+         "wait_mode": "constant", "wait_min": "0.5", "wait_max": "2"},
+        {"duration": 120, "users": 300, "spawn_rate": 50,
+         "wait_mode": "constant", "wait_min": "0.1", "wait_max": "1"},
+        {"duration": 60,  "users": 1,   "spawn_rate": 10,
+         "wait_mode": "constant", "wait_min": "1",   "wait_max": "3"},
+    ],
 
-    "Spike": [{"duration": 30, "users": 10, "spawn_rate": 2, "wait_mode": "constant", "wait_min": "1", "wait_max": "1"},
-              {"duration": 60, "users": 500, "spawn_rate": 200, "wait_mode": "constant", "wait_min": "0.1",
-               "wait_max": "0.1"},
-              {"duration": 90, "users": 10, "spawn_rate": 50, "wait_mode": "constant", "wait_min": "1",
-               "wait_max": "1"}],
+    "Spike": [
+        {"duration": 30, "users": 10,  "spawn_rate": 2,
+         "wait_mode": "constant", "wait_min": "1",   "wait_max": "1"},
+        {"duration": 30, "users": 500, "spawn_rate": 200,
+         "wait_mode": "constant", "wait_min": "0.1", "wait_max": "0.1"},
+        {"duration": 30, "users": 10,  "spawn_rate": 50,
+         "wait_mode": "constant", "wait_min": "1",   "wait_max": "1"},
+    ],
 
     "Endurance": [
-        {"duration": 300, "users": 10, "spawn_rate": 2, "wait_mode": "between", "wait_min": "2", "wait_max": "5"},
-        {"duration": 7200, "users": 25, "spawn_rate": 1, "wait_mode": "between", "wait_min": "2", "wait_max": "5"},
-        {"duration": 7500, "users": 1, "spawn_rate": 5, "wait_mode": "between", "wait_min": "2", "wait_max": "5"}],
+        {"duration": 300,  "users": 10, "spawn_rate": 2,
+         "wait_mode": "between", "wait_min": "2", "wait_max": "5"},
+        {"duration": 6900, "users": 25, "spawn_rate": 1,
+         "wait_mode": "between", "wait_min": "2", "wait_max": "5"},
+        {"duration": 300,  "users": 1,  "spawn_rate": 5,
+         "wait_mode": "between", "wait_min": "2", "wait_max": "5"},
+    ],
 
-    "Capacity": [{"duration": 120, "users": 10, "spawn_rate": 2, "wait_mode": "constant_throughput", "wait_min": "1",
-                  "wait_max": "1"},
-                 {"duration": 240, "users": 25, "spawn_rate": 2, "wait_mode": "constant_throughput", "wait_min": "2",
-                  "wait_max": "2"},
-                 {"duration": 360, "users": 50, "spawn_rate": 5, "wait_mode": "constant_throughput", "wait_min": "3",
-                  "wait_max": "3"},
-                 {"duration": 480, "users": 100, "spawn_rate": 10, "wait_mode": "constant_throughput", "wait_min": "5",
-                  "wait_max": "5"},
-                 {"duration": 600, "users": 150, "spawn_rate": 10, "wait_mode": "constant_throughput", "wait_min": "7",
-                  "wait_max": "7"},
-                 {"duration": 720, "users": 200, "spawn_rate": 20, "wait_mode": "constant_throughput", "wait_min": "10",
-                  "wait_max": "10"}],
+    "Capacity": [
+        {"duration": 120, "users": 10,  "spawn_rate": 2,
+         "wait_mode": "constant_throughput", "wait_min": "1",  "wait_max": "1"},
+        {"duration": 120, "users": 25,  "spawn_rate": 2,
+         "wait_mode": "constant_throughput", "wait_min": "2",  "wait_max": "2"},
+        {"duration": 120, "users": 50,  "spawn_rate": 5,
+         "wait_mode": "constant_throughput", "wait_min": "3",  "wait_max": "3"},
+        {"duration": 120, "users": 100, "spawn_rate": 10,
+         "wait_mode": "constant_throughput", "wait_min": "5",  "wait_max": "5"},
+        {"duration": 120, "users": 150, "spawn_rate": 10,
+         "wait_mode": "constant_throughput", "wait_min": "7",  "wait_max": "7"},
+        {"duration": 120, "users": 200, "spawn_rate": 20,
+         "wait_mode": "constant_throughput", "wait_min": "10", "wait_max": "10"},
+    ],
 }
 
 
@@ -169,28 +189,43 @@ def apply_theme(name):
     t = THEMES[name]
     C_SIDEBAR = t["BG_SIDEBAR"]
     C_CONTENT = t["BG_MAIN"]
-    C_CARD = t["BG_CARD"]
-    C_ACTIVE = t["ACCENT"]
-    C_HOVER = t["ACCENT_HOVER"]
-    C_TEXT = t["FG_TEXT"]
-    C_MUTED = t["FG_MUTED"]
-    C_LABEL = t["FG_LABEL"]
-    C_HEADER = t["FG_HEADER"]
-    C_ENTRY = t["BG_INPUT"]
-    C_DANGER = t["BTN_DANGER"]
+    C_CARD    = t["BG_CARD"]
+    C_ACTIVE  = t["ACCENT"]
+    C_HOVER   = t["ACCENT_HOVER"]
+    C_TEXT    = t["FG_TEXT"]
+    C_MUTED   = t["FG_MUTED"]
+    C_LABEL   = t["FG_LABEL"]
+    C_HEADER  = t["FG_HEADER"]
+    C_ENTRY   = t["BG_INPUT"]
+    C_DANGER  = t["BTN_DANGER"]
     C_SUCCESS = t["BTN_START"]
-    C_PURPLE = t["BTN_REPORT"]
-    C_BLUE = t["BTN_SETUP"]
+    C_PURPLE  = t["BTN_REPORT"]
+    C_BLUE    = t["BTN_SETUP"]
 
 
-ZOOM_MIN = 0.5
-ZOOM_MAX = 2.0
+ZOOM_MIN  = 0.5
+ZOOM_MAX  = 2.0
 ZOOM_STEP = 0.1
 
 
 # ============================================================
 #  HELPERS
 # ============================================================
+
+
+
+def darken(hex_color, amount=40):
+    hex_color = str(hex_color).lstrip("#")
+
+    if len(hex_color) != 6:
+        return "#000000"
+
+    r, g, b = tuple(
+        max(0, int(hex_color[i:i+2], 16) - amount)
+        for i in (0, 2, 4)
+    )
+
+    return f"#{r:02x}{g:02x}{b:02x}"
 
 def parse_ports(port_str):
     """Parse port string supporting ranges and combinations, e.g. '1024-2000,8080'."""
@@ -215,7 +250,34 @@ def parse_ports(port_str):
             except ValueError:
                 print(f"WARNING: invalid port '{part}', skipping")
     return result or None
+def normalize_endpoint_paths(value):
+    """
+    Normalize comma-separated endpoint paths.
 
+    Example:
+      "/,/health,/api/status,api/products"
+    becomes:
+      "/,/health,/api/status,/api/products"
+    """
+    raw = str(value or "/").strip()
+
+    if not raw:
+        return "/"
+
+    paths = []
+
+    for part in raw.split(","):
+        path = part.strip()
+
+        if not path:
+            continue
+
+        if not path.startswith("/"):
+            path = "/" + path
+
+        paths.append(path)
+
+    return ",".join(paths) if paths else "/"
 
 def is_ipv6(ip):
     try:
@@ -228,7 +290,7 @@ def is_ipv6(ip):
 def ipv6_range_to_list(start_str, end_str, max_count=65536):
     import ipaddress
     start = int(ipaddress.IPv6Address(start_str))
-    end = int(ipaddress.IPv6Address(end_str))
+    end   = int(ipaddress.IPv6Address(end_str))
     total = end - start + 1
     if total > max_count:
         raise ValueError(
@@ -237,31 +299,43 @@ def ipv6_range_to_list(start_str, end_str, max_count=65536):
         )
     return [str(ipaddress.IPv6Address(i)) for i in range(start, end + 1)]
 
+def ipv6_prefix_to_list(prefix_str, max_count=256, existing_ips=None, excluded_ips=None):
+    """
+    Generate the next block of IPv6 addresses from a prefix.
 
-def ipv6_prefix_to_list(prefix_str, max_count=256):
-    import ipaddress
+    - Generates at most max_count addresses.
+    - Existing IPs are skipped.
+    - Excluded IPs are skipped as well.
+    - This prevents adding the target/server IP into the source IP pool.
+    """
     net = ipaddress.IPv6Network(prefix_str, strict=False)
-    return [str(ip) for ip in list(net.hosts())[:max_count]]
+    existing = set(existing_ips or [])
+    excluded = set(excluded_ips or [])
 
+    skip_ips = existing | excluded
+    result = []
 
-def darken(hex_color, amount=40):
-    hex_color = hex_color.lstrip("#")
-    r, g, b = tuple(max(0, int(hex_color[i:i + 2], 16) - amount) for i in (0, 2, 4))
-    return f"#{r:02x}{g:02x}{b:02x}"
+    for ip in net.hosts():
+        ip_str = str(ip)
 
+        if ip_str in skip_ips:
+            continue
+
+        result.append(ip_str)
+
+        if len(result) >= max_count:
+            break
+
+    return result
 
 def bind_card(widget, cmd, hover_color, normal_color):
     def on_click(e): cmd()
-
     def on_enter(e): widget.configure(fg_color=hover_color)
-
     def on_leave(e): widget.configure(fg_color=normal_color)
-
     for w in [widget] + list(widget.winfo_children()):
         w.bind("<Button-1>", on_click)
         w.bind("<Enter>", on_enter)
         w.bind("<Leave>", on_leave)
-
 
 def make_scroll_frame(parent, **kwargs):
     sf = ctk.CTkScrollableFrame(
@@ -278,7 +352,6 @@ def make_scroll_frame(parent, **kwargs):
         pass
     return sf
 
-
 def get_network_interfaces():
     interfaces = []
     try:
@@ -290,7 +363,6 @@ def get_network_interfaces():
     except Exception:
         pass
     return interfaces if interfaces else ["ens33", "eth0", "wlan0"]
-
 
 # ============================================================
 #  POOL FILE HELPERS
@@ -305,7 +377,7 @@ def parse_pool_lines(path):
                                          alebo zostane None)
     Vracia: list of (ip_str, prefix_str|None)  — napr. [('192.168.10.10', '32'), ...]
     """
-    entries = []
+    entries      = []
     header_prefix = None
     with open(path) as f:
         for line in f:
@@ -348,10 +420,11 @@ def read_pool_for_interface(path, default_prefix=None):
 
 class SavePoolDialog(ctk.CTkToplevel):
 
+
     def __init__(self, master, ip_pool_dir, suggested_name, **kwargs):
         super().__init__(master, **kwargs)
-        self.result_name = None
-        self.result_mode = None
+        self.result_name   = None
+        self.result_mode   = None
         self.result_target = None
 
         self.title("Save IP Pool")
@@ -365,7 +438,7 @@ class SavePoolDialog(ctk.CTkToplevel):
         self.focus_force()
 
         self._ip_pool_dir = ip_pool_dir
-        self._existing = self._scan_pools()
+        self._existing    = self._scan_pools()
 
         self._build(suggested_name)
         self.wait_window()
@@ -468,10 +541,10 @@ class SavePoolDialog(ctk.CTkToplevel):
         )
         self.destroy()
 
-
 class LocustGUI(ctk.CTk):
+
     NAV_ITEMS = [
-        ("⚙", "Config"),
+        ("⚙",  "Config"),
         ("🌐", "HTTP/S"),
         ("🌐", "TCP"),
         ("🌐", "UDP"),
@@ -479,16 +552,16 @@ class LocustGUI(ctk.CTk):
         ("📋", "Reports"),
     ]
 
-    LBL_W = 160
+    LBL_W  = 160
     ENTR_W = 220
 
-    def __init__(self, initial_theme="Locust Dark"):
+    def __init__(self, initial_theme="Navy Blue"):
         super().__init__()
         apply_theme(initial_theme)
-        self._current_theme = initial_theme
+        self._current_theme   = initial_theme
         self._network_monitor = None
         self._reach_stop_event = threading.Event()
-        self.pages = {}
+
         self.title("Locust Test GUI")
         self.geometry("1100x800")
         self.minsize(900, 600)
@@ -498,18 +571,18 @@ class LocustGUI(ctk.CTk):
         self.grid_rowconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=0)
 
-        self.locust_process = None
-        self.log_queue = queue.Queue()
+        self.locust_process  = None
+        self.log_queue       = queue.Queue()
         self.locustfile_path = None
-        self.entries = {}
-        self._labels = {}
-        self._active_page = "HTTP/S"
-        self._nav_buttons = {}
-        self._pages = {}
-        self._zoom = 1.0
+        self.entries         = {}
+        self._labels         = {}
+        self._active_page    = None
+        self._nav_buttons    = {}
+        self._pages          = {}
+        self._zoom           = 1.0
 
-        self._stages = []
-        self._stage_rows = []
+        self._stages      = []
+        self._stage_rows  = []
         self._preset_btns = {}
 
         self._build_sidebar()
@@ -520,12 +593,12 @@ class LocustGUI(ctk.CTk):
         self._show_page("Config")
         self._poll_log_queue()
 
-        self.bind_all("<Control-equal>", self._zoom_in)
-        self.bind_all("<Control-plus>", self._zoom_in)
-        self.bind_all("<Control-KP_Add>", self._zoom_in)
-        self.bind_all("<Control-minus>", self._zoom_out)
+        self.bind_all("<Control-equal>",       self._zoom_in)
+        self.bind_all("<Control-plus>",        self._zoom_in)
+        self.bind_all("<Control-KP_Add>",      self._zoom_in)
+        self.bind_all("<Control-minus>",       self._zoom_out)
         self.bind_all("<Control-KP_Subtract>", self._zoom_out)
-        self.bind_all("<Control-0>", self._zoom_reset)
+        self.bind_all("<Control-0>",           self._zoom_reset)
 
         self._bind_scroll()
 
@@ -547,31 +620,35 @@ class LocustGUI(ctk.CTk):
         app = LocustGUI(initial_theme=theme_name)
         app.mainloop()
 
+
     # ================================================================
     # ENV LOAD / SAVE
     # ================================================================
 
     def _load_env_to_gui(self):
         mapping = {
-            "target": os.getenv("TARGET_HOST"),
-            "interface": os.getenv("INTERFACE"),
-            "test_type": os.getenv("TEST_TYPE"),
-            "ip_start": os.getenv("IP_START"),
-            "ip_end": os.getenv("IP_END"),
-            "ipv4prefix": os.getenv("IPV4PREFIX", "32"),
-            "ip6_start": os.getenv("IP6_START"),
-            "ip6_end": os.getenv("IP6_END"),
-            "ip6_prefix": os.getenv("IP6_PREFIX"),
-            "ipv6rangeprefix": os.getenv("IPV6RPREFIX", "128"),
-            "processes": os.getenv("PROCESSES"),
-            "stop_timeout": os.getenv("STOP_TIMEOUT", "60"),
-            "connect_timeout": os.getenv("CONNECT_TIMEOUT", "5"),
-            "read_timeout": os.getenv("READ_TIMEOUT", "15"),
-            "reach_interval": os.getenv("REACH_INTERVAL"),
-            "reach_timeout": os.getenv("REACH_TIMEOUT"),
-            "reach_src_ip": os.getenv("REACH_SRC_IP", ""),
-            "reach_interface": os.getenv("REACH_INTERFACE", ""),
-            "reach_threshold": os.getenv("REACH_THRESHOLD"),
+            "target":           os.getenv("TARGET_HOST"),
+            "endpoint_path":    os.getenv("ENDPOINT_PATH", "/"),
+            "interface":        os.getenv("INTERFACE"),
+            "test_type":        os.getenv("TEST_TYPE"),
+            "ip_start":         os.getenv("IP_START"),
+            "ip_end":           os.getenv("IP_END"),
+            "ipv4prefix":       os.getenv("IPV4PREFIX", "32"),
+            "ip6_start":        os.getenv("IP6_START"),
+            "ip6_end":          os.getenv("IP6_END"),
+            "ip6_prefix":       os.getenv("IP6_PREFIX"),
+            "ipv6rangeprefix":  os.getenv("IPV6RPREFIX", "128"),
+            "processes":        os.getenv("PROCESSES"),
+            "http_method":      os.getenv("HTTP_METHOD", "GET"),
+            "stop_timeout":     os.getenv("STOP_TIMEOUT", "60"),
+            "connect_timeout":  os.getenv("CONNECT_TIMEOUT", "5"),
+            "read_timeout":     os.getenv("READ_TIMEOUT", "15"),
+            "reach_interval":   os.getenv("REACH_INTERVAL"),
+            "reach_timeout":    os.getenv("REACH_TIMEOUT"),
+            "reach_src_ip":     os.getenv("REACH_SRC_IP", ""),
+            "reach_interface":  os.getenv("REACH_INTERFACE", ""),
+            "request_threshold": os.getenv("REQUEST_FAILURE_THRESHOLD", "1"),
+            "reach_threshold":  os.getenv("REACH_THRESHOLD", "5"),
         }
         for key, value in mapping.items():
             if value and key in self.entries:
@@ -589,9 +666,9 @@ class LocustGUI(ctk.CTk):
 
         # ── Stages —────────────────────────────
         stages_raw = os.getenv("STAGES", "")
-        for tab_key in self.pages:
+        for tab_key in self._pages:
             self._active_page = tab_key
-            q = self.pages[tab_key]
+            q = self._pages[tab_key]
             if stages_raw:
                 try:
                     q["stages"] = json.loads(stages_raw)
@@ -607,36 +684,40 @@ class LocustGUI(ctk.CTk):
     def _save_env_from_gui(self):
         env_path = os.path.join(BASE_DIR, "config.env")
         mapping = {
-            "TARGET_HOST": self.get("target"),
-            "INTERFACE": self.get("interface"),
-            "TEST_TYPE": self.get("test_type"),
-            "IP_VERSION": self._active_ip_version(),
-            "IP_START": self.entries["ip_start"].get().strip(),
-            "IP_END": self.entries["ip_end"].get().strip(),
-            "IPV4PREFIX": self.entries["ipv4prefix"].get(),
-            "IP6_START": self.entries["ip6_start"].get().strip(),
-            "IP6_END": self.entries["ip6_end"].get().strip(),
-            "IP6_PREFIX": self.entries["ip6_prefix"].get().strip(),
-            "IPV6_MODE": self.ipv6_mode.get(),
-            "IPV6RPREFIX": self.entries["ipv6rangeprefix"].get(),
-            "PROCESSES": self.get("processes"),
-            "STOP_TIMEOUT": self.get("stop_timeout"),
+            "TARGET_HOST":     self.get("target"),
+            "ENDPOINT_PATH":   normalize_endpoint_paths(self.get("endpoint_path") or "/"),
+            "INTERFACE":       self.get("interface"),
+            "TEST_TYPE":       self.get("test_type"),
+            "IP_VERSION":      self._active_ip_version(),
+            "IP_START":        self.entries["ip_start"].get().strip(),
+            "IP_END":          self.entries["ip_end"].get().strip(),
+            "IPV4PREFIX":      self.entries["ipv4prefix"].get(),
+            "IP6_START":       self.entries["ip6_start"].get().strip(),
+            "IP6_END":         self.entries["ip6_end"].get().strip(),
+            "IP6_PREFIX":      self.entries["ip6_prefix"].get().strip(),
+            "IPV6_MODE":       self.ipv6_mode.get(),
+            "IPV6RPREFIX":     self._get_prefix_len(),
+            "PROCESSES":       self.get("processes"),
+            "HTTP_METHOD":     self.get("http_method") or "GET",
+            "REQUEST_BODY":    self.get_request_body(),
+            "STOP_TIMEOUT":    self.get("stop_timeout"),
             "CONNECT_TIMEOUT": self.get("connect_timeout") or "5",
-            "READ_TIMEOUT": self.get("read_timeout") or "15",
-            "SSL_VERIFY": "true" if self._ssl_verify_var.get() else "false",
-            "REACH_INTERVAL": self.get("reach_interval"),
-            "REACH_TIMEOUT": self.get("reach_timeout"),
-            "REACH_SRC_IP": self.get("reach_src_ip"),
+            "READ_TIMEOUT":    self.get("read_timeout") or "15",
+            "SSL_VERIFY":      "true" if self._ssl_verify_var.get() else "false",
+            "REACH_INTERVAL":  self.get("reach_interval"),
+            "REACH_TIMEOUT":   self.get("reach_timeout"),
+            "REACH_SRC_IP":    self.get("reach_src_ip"),
             "REACH_INTERFACE": self.get("reach_interface"),
-            "REACH_THRESHOLD": self.get("reach_threshold"),
-            "STAGES": json.dumps(self._get_stages()),
+            "REQUEST_FAILURE_THRESHOLD": self.get("request_threshold") or "1",
+            "REACH_THRESHOLD": self.get("reach_threshold") or "5",
+            "STAGES":          json.dumps(self._get_stages()),
         }
         # Validate all numeric timeout fields before saving
         timeout_fields = [
-            ("STOP_TIMEOUT", "Stop timeout"),
-            ("REACH_TIMEOUT", "Reach timeout"),
+            ("STOP_TIMEOUT",    "Stop timeout"),
+            ("REACH_TIMEOUT",   "Reach timeout"),
             ("CONNECT_TIMEOUT", "Connect timeout"),
-            ("READ_TIMEOUT", "Read timeout"),
+            ("READ_TIMEOUT",    "Read timeout"),
         ]
         for env_key, label in timeout_fields:
             val = mapping.get(env_key, "")
@@ -646,6 +727,22 @@ class LocustGUI(ctk.CTk):
                 except (ValueError, AssertionError):
                     self.write_log(
                         f"⚠ {label} '{val}' is invalid (must be a positive number). Skipping save."
+                    )
+                    return
+
+        threshold_fields = [
+            ("REQUEST_FAILURE_THRESHOLD", "Request failure threshold"),
+            ("REACH_THRESHOLD",           "Reachability failure threshold"),
+        ]
+        for env_key, label in threshold_fields:
+            val = mapping.get(env_key, "")
+            if val:
+                try:
+                    x = float(val)
+                    assert 0 <= x <= 100
+                except (ValueError, AssertionError):
+                    self.write_log(
+                        f"⚠ {label} '{val}' is invalid (must be 0–100 %). Skipping save."
                     )
                     return
 
@@ -688,8 +785,8 @@ class LocustGUI(ctk.CTk):
 
     def _bind_scroll(self):
         self.bind_all("<MouseWheel>", self._on_mousewheel)
-        self.bind_all("<Button-4>", self._on_mousewheel)
-        self.bind_all("<Button-5>", self._on_mousewheel)
+        self.bind_all("<Button-4>",   self._on_mousewheel)
+        self.bind_all("<Button-5>",   self._on_mousewheel)
 
     def _on_mousewheel(self, event):
         if isinstance(event.widget, tk.Text):
@@ -751,7 +848,7 @@ class LocustGUI(ctk.CTk):
                 height=42,
                 command=lambda l=label: self._show_page(l)
             )
-            btn.grid(row=3 + i, column=0, padx=10, pady=3, sticky="ew")
+            btn.grid(row=3+i, column=0, padx=10, pady=3, sticky="ew")
             self._nav_buttons[label] = btn
 
         ctk.CTkFrame(sidebar, height=1, fg_color="#2a3a5e"
@@ -788,8 +885,8 @@ class LocustGUI(ctk.CTk):
 
     def _build_main(self):
         self.main = ctk.CTkFrame(self._paned, corner_radius=0, fg_color=C_CONTENT)
-        self._paned.add(self.main, minsize=300, stretch="always")
-        self._paned.add(self._logframe, minsize=80, stretch="never")
+        self._paned.add(self.main,      minsize=300, stretch="always")
+        self._paned.add(self._logframe, minsize=80,  stretch="never")
 
         self.main.grid_columnconfigure(0, weight=1)
         self.main.grid_rowconfigure(2, weight=1)
@@ -821,10 +918,10 @@ class LocustGUI(ctk.CTk):
         for label, btn in self._nav_buttons.items():
             if label == name:
                 btn.configure(fg_color=C_ACTIVE, text_color="white",
-                              font=ctk.CTkFont(size=13, weight="bold"))
+                               font=ctk.CTkFont(size=13, weight="bold"))
             else:
                 btn.configure(fg_color="transparent", text_color=C_TEXT,
-                              font=ctk.CTkFont(size=13, weight="normal"))
+                               font=ctk.CTkFont(size=13, weight="normal"))
         for label, frame in self._pages.items():
             if label == name:
                 frame.grid()
@@ -856,19 +953,25 @@ class LocustGUI(ctk.CTk):
         row = 0
 
         row = self._card_header(scroll, "General", row)
-        card = self._card(scroll, row)
-        row += 1
-        self._field_row(card, 0, "Target host", "target", "https://google.sk",
+        card = self._card(scroll, row); row += 1
+        self._field_row(card, 0, "Target host",  "target",    "https://google.sk",
                         help="Full URL or IP address of the server under test.\nExample: https://192.168.1.1 or http://myapp.local:8080")
+        self._field_row(card, 1,"Endpoint path","endpoint_path","/",
+        help="Endpoint path or multiple comma-separated paths.\n"
+             "Examples: /, /api/users, /health\n"
+             "For multiple endpoints use: /,/api/users,/health"
+        )
         ifaces = get_network_interfaces()
-        self._combo_row(card, 1, "Interface", "interface", ifaces,
-                        os.getenv("INTERFACE", ifaces[0] if ifaces else "ens33"),
-                        help="Network interface used to send outgoing requests.\nMust match the interface where the IP pool will be assigned.")
-        self._field_row(card, 0, "Test type", "test_type", "Load Test", col=2,
+        self._combo_row(card, 2, "Interface", "interface", ifaces,
+                os.getenv("INTERFACE", ifaces[0] if ifaces else "ens33"),
+                help="Network interface used to send outgoing requests.\nMust match the interface where the IP pool will be assigned.")
+        self._field_row(card, 0, "Test type",    "test_type", "Load Test", col=2,
                         help="Label describing the test scenario.\nAppears in the generated PDF report header.")
-        self._field_row(card, 1, "Source ports", "src_ports", "", col=2,
+        self._field_row(card, 1, "Source ports", "src_ports", "",          col=2,
                         ph="e.g. 1024-65535",
                         help="Source port range for outgoing connections.\nFormats: single (8080), range (1024-65535), list (8080,8081,8082).\nLeave empty to let the OS assign ports automatically.")
+        self._field_row(card, 2, "Request failure threshold (%)", "request_threshold", "1", col=2,
+                        help="Maximum allowed percentage of failed Locust HTTP requests.\nExample: 1 means the load test is considered unstable if more than 1% of requests fail.")
 
         # SSL checkbox
         self._ssl_verify_var = ctk.BooleanVar(value=os.getenv("SSL_VERIFY", "true").lower() != "false")
@@ -882,15 +985,14 @@ class LocustGUI(ctk.CTk):
             hover_color=C_HOVER,
             border_color=C_MUTED,
         )
-        ssl_cb.grid(row=2, column=0, columnspan=2, padx=(16, 8), pady=(0, 12), sticky="w")
+        ssl_cb.grid(row=3, column=0, columnspan=2, padx=(16, 8), pady=(0, 12), sticky="w")
         CTkToolTip(ssl_cb,
                    message="When disabled, HTTPS requests do not verify the server certificate.\nUseful for testing self-signed certificates",
                    delay=0.3, x_offset=10, y_offset=-10)
 
         # ── IP Pool ───────────────────────────────────────────────
         row = self._card_header(scroll, "IP Pool", row)
-        card2 = self._card(scroll, row)
-        row += 1
+        card2 = self._card(scroll, row); row += 1
 
         self.ip_tab = ctk.CTkTabview(card2, height=110, fg_color=C_CARD,
                                      segmented_button_fg_color=darken(C_CARD),
@@ -905,7 +1007,7 @@ class LocustGUI(ctk.CTk):
         v4.grid_columnconfigure(1, weight=1)
         for i, (lbl, key, default) in enumerate([
             ("IP range start", "ip_start", "192.168.10.10"),
-            ("IP range end", "ip_end", "192.168.10.40"),
+            ("IP range end",   "ip_end",   "192.168.10.40"),
         ]):
             ctk.CTkLabel(v4, text=lbl, font=ctk.CTkFont(size=12),
                          text_color=C_LABEL, anchor="w", width=self.LBL_W
@@ -919,7 +1021,7 @@ class LocustGUI(ctk.CTk):
                      text_color=C_LABEL, anchor="w", width=self.LBL_W
                      ).grid(row=2, column=0, padx=(16, 8), pady=6, sticky="w")
         cb_v4_prefix = ctk.CTkComboBox(
-            v4, values=["32", "31", "30", "29", "28", "27", "26", "25", "24", "16", "8"],
+            v4, values=["32","31","30","29","28","27","26","25","24","16","8"],
             width=self.ENTR_W, fg_color=C_ENTRY,
             button_color=C_ACTIVE, button_hover_color=C_HOVER,
             dropdown_fg_color=C_CARD, dropdown_text_color=C_TEXT
@@ -950,7 +1052,7 @@ class LocustGUI(ctk.CTk):
         self.ipv6_range_frame.grid_columnconfigure(0, minsize=self.LBL_W)
         self.ipv6_range_frame.grid_columnconfigure(1, weight=1)
         for i, (lbl, key, dflt) in enumerate([("IPv6 start", "ip6_start", "fd00::10"),
-                                              ("IPv6 end", "ip6_end", "fd00::40")]):
+                                               ("IPv6 end",   "ip6_end",   "fd00::40")]):
             ctk.CTkLabel(self.ipv6_range_frame, text=lbl, font=ctk.CTkFont(size=11),
                          text_color=C_LABEL, anchor="w", width=self.LBL_W
                          ).grid(row=i, column=0, padx=(16, 8), pady=4, sticky="w")
@@ -965,7 +1067,7 @@ class LocustGUI(ctk.CTk):
                      ).grid(row=2, column=0, padx=(16, 8), pady=4, sticky="w")
         cb_v6_prefix = ctk.CTkComboBox(
             self.ipv6_range_frame,
-            values=["128", "127", "126", "120", "112", "96", "64"],
+            values=["128","127","126","120","112","96","64"],
             width=self.ENTR_W, fg_color=C_ENTRY,
             button_color=C_ACTIVE, button_hover_color=C_HOVER,
             dropdown_fg_color=C_CARD, dropdown_text_color=C_TEXT
@@ -977,12 +1079,41 @@ class LocustGUI(ctk.CTk):
         self.ipv6_prefix_frame = ctk.CTkFrame(v6, fg_color="transparent")
         self.ipv6_prefix_frame.grid(row=1, column=0, columnspan=4, sticky="ew")
         self.ipv6_prefix_frame.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(self.ipv6_prefix_frame, text="IPv6 prefix",
-                     font=ctk.CTkFont(size=11), text_color=C_LABEL, anchor="w"
-                     ).grid(row=0, column=0, padx=(16, 8), pady=4, sticky="w")
-        e = ctk.CTkEntry(self.ipv6_prefix_frame, width=self.ENTR_W, fg_color=C_ENTRY)
+
+        lbl_ipv6_prefix = ctk.CTkLabel(
+            self.ipv6_prefix_frame,
+            text="IPv6 prefix ⓘ",
+            font=ctk.CTkFont(size=11),
+            text_color=C_LABEL,
+            anchor="w",
+            cursor="question_arrow"
+        )
+        lbl_ipv6_prefix.grid(row=0, column=0, padx=(16, 8), pady=4, sticky="w")
+
+        CTkToolTip(
+            lbl_ipv6_prefix,
+            message=(
+                "Prefix mode generates IPv6 addresses in blocks of max. 256 addresses.\n"
+                "If the current block already exists in ip_pool.txt, the next unused\n"
+                "block of 256 addresses from the same prefix will be generated.\n"
+                "The target/server IP address is skipped automatically to avoid IP conflicts.\n\n"
+                "Example: fd00:100::/64\n"
+                "1st setup: first 256 unused addresses\n"
+                "2nd setup: next 256 unused addresses"
+            ),
+            delay=0.3,
+            x_offset=10,
+            y_offset=-10
+        )
+
+        e = ctk.CTkEntry(
+            self.ipv6_prefix_frame,
+            width=self.ENTR_W,
+            fg_color=C_ENTRY
+        )
         e.insert(0, "fd00::/64")
         e.grid(row=0, column=1, padx=(0, 12), pady=4, sticky="ew")
+
         self.entries["ip6_prefix"] = e
         self.ipv6_prefix_frame.grid_remove()
 
@@ -995,7 +1126,7 @@ class LocustGUI(ctk.CTk):
             custom_pool_frame, text="Custom pool file",
             font=ctk.CTkFont(size=12), text_color=C_LABEL,
             anchor="w", width=self.LBL_W
-        ).grid(row=0, column=0, padx=(4, 8), pady=4, sticky="w")
+        ).grid(row=0, column=0, padx=(20, 8), pady=4, sticky="w")
 
         self._custom_pool_entry = ctk.CTkEntry(
             custom_pool_frame, fg_color=C_ENTRY,
@@ -1025,24 +1156,22 @@ class LocustGUI(ctk.CTk):
 
         # ── Reachability ──────────────────────────────────────────
         row = self._card_header(scroll, "Reachability", row)
-        card3 = self._card(scroll, row)
-        row += 1
-        self._field_row(card3, 0, "Interval (s)", "reach_interval", "5",
+        card3 = self._card(scroll, row); row += 1
+        self._field_row(card3, 0, "Interval (s)",         "reach_interval",  "5",
                         help="How often (in seconds) a reachability probe is sent to the target\nduring the test. Lower = more precise, higher = less overhead.")
-        self._field_row(card3, 1, "Timeout (s)", "reach_timeout", "5",
+        self._field_row(card3, 1, "Timeout (s)",           "reach_timeout",   "5",
                         help="Maximum time to wait for a response to each probe.\nProbes exceeding this limit are counted as failures.")
-        self._field_row(card3, 0, "Source IP", "reach_src_ip", "", col=2,
+        self._field_row(card3, 0, "Source IP",             "reach_src_ip",    "", col=2,
                         ph="= IP range start",
                         help="Source IP used for reachability probes.\nLeave empty to use the first IP from the pool.\nUseful when you want probes from a specific address.")
         self._combo_row(card3, 1, "Interface", "reach_interface", [""] + get_network_interfaces(), "", col=2,
                         help="Network interface used for reachability probes.\nLeave empty to use the main interface defined above.")
-        self._field_row(card3, 2, "Failure threshold (%)", "reach_threshold", "50", col=0,
-                        help="Percentage of failed probes above which the test\nis marked as FAILED in the PDF report.\nExample: 50 means more than half of probes must succeed.")
+        self._field_row(card3, 2, "Reachability failure threshold (%)", "reach_threshold", "5", col=0,
+                        help="Maximum allowed percentage of failed reachability probes.\nThis threshold applies only to reachability monitoring, not to Locust request failures.")
 
         # ── Network Monitor ───────────────────────────────────────
         row = self._card_header(scroll, "Network Monitor", row)
-        card_mon = self._card(scroll, row)
-        row += 1
+        card_mon = self._card(scroll, row); row += 1
         ifaces = get_network_interfaces()
         self._combo_row(
             card_mon, 0, "Interface", "monitor_interface", ifaces,
@@ -1057,22 +1186,22 @@ class LocustGUI(ctk.CTk):
         bf.grid_columnconfigure(0, weight=1)  # spacer vľavo
 
         ctk.CTkButton(bf, text="⚙ Setup IP Pool", width=150, height=32,
-                      fg_color=C_BLUE, hover_color=darken(C_BLUE, 25),
-                      font=ctk.CTkFont(size=12), corner_radius=6,
-                      command=self.setup_env
-                      ).grid(row=0, column=1, padx=4, pady=8)
+            fg_color=C_BLUE, hover_color=darken(C_BLUE, 25),
+            font=ctk.CTkFont(size=12), corner_radius=6,
+            command=self.setup_env
+        ).grid(row=0, column=1, padx=4, pady=8)
 
         ctk.CTkButton(bf, text="💾 Save Pool", width=130, height=32,
-                      fg_color=C_PURPLE, hover_color=darken(C_PURPLE, 25),
-                      font=ctk.CTkFont(size=12), corner_radius=6,
-                      command=self._save_current_pool_to_dir
-                      ).grid(row=0, column=2, padx=4, pady=8)
+            fg_color=C_PURPLE, hover_color=darken(C_PURPLE, 25),
+            font=ctk.CTkFont(size=12), corner_radius=6,
+            command=self._save_current_pool_to_dir
+        ).grid(row=0, column=2, padx=4, pady=8)
 
         ctk.CTkButton(bf, text="🗑 Cleanup", width=150, height=32,
-                      fg_color=C_DANGER, hover_color=darken(C_DANGER, 25),
-                      font=ctk.CTkFont(size=12), corner_radius=6,
-                      command=self.cleanup
-                      ).grid(row=0, column=3, padx=(4, 16), pady=8)
+            fg_color=C_DANGER, hover_color=darken(C_DANGER, 25),
+            font=ctk.CTkFont(size=12), corner_radius=6,
+            command=self.cleanup
+        ).grid(row=0, column=3, padx=(4, 16), pady=8)
 
         return outer
 
@@ -1083,7 +1212,7 @@ class LocustGUI(ctk.CTk):
     def _build_page_http(self, parent):
         p = {}
         p["preset_btn_widgets"] = {}
-        self.pages["HTTP/S"] = p
+        self._pages["HTTP/S"] = p
         p["stage_rows"] = []
         p["stages"] = []
         outer = ctk.CTkFrame(parent, fg_color="transparent", corner_radius=0)
@@ -1130,13 +1259,12 @@ class LocustGUI(ctk.CTk):
         p["hdr_max_lbl"] = None
 
         for col, (txt, help_txt) in enumerate([
-            ("Duration (s)", None),
-            ("Users", None),
-            ("Spawn rate", None),
-            ("Wait mode",
-             "between – random wait between Min and Max\nconstant – fixed wait of Min seconds\nconstant_throughput – Min = target RPS per user"),
-            ("Min", "between: minimum wait (s)\nconstant: fixed wait (s)\nconstant_throughput: target RPS"),
-            ("Max", "between: maximum wait (s)\nIgnored in other modes"),
+            ("Duration (s)", "Duration of this stage only.\nExample: 60, 120, 120 means total test time 300 seconds."),
+            ("Users",        None),
+            ("Spawn rate",   None),
+            ("Wait mode",    "between – random wait between Min and Max\nconstant – fixed wait of Min seconds\nconstant_throughput – Min = target RPS per user"),
+            ("Min",          "between: minimum wait (s)\nconstant: fixed wait (s)\nconstant_throughput: target RPS"),
+            ("Max",          "between: maximum wait (s)\nIgnored in other modes"),
         ]):
             lbl = ctk.CTkLabel(
                 p["stages_frame"],
@@ -1145,7 +1273,7 @@ class LocustGUI(ctk.CTk):
                 text_color=C_MUTED, anchor="w",
                 cursor="question_arrow" if help_txt else "arrow"
             )
-            lbl.grid(row=0, column=col, padx=(0, 4), pady=4, sticky="w")
+            lbl.grid(row=0, column=col, padx=(0,4), pady=4, sticky="w")
             if help_txt:
                 CTkToolTip(lbl, message=help_txt, delay=0.3, x_offset=10, y_offset=-10)
             if txt == "Min":
@@ -1169,8 +1297,7 @@ class LocustGUI(ctk.CTk):
 
         # ── Locust Parameters ─────────────────────────────────────
         s_row = self._card_header(scroll, "Locust Parameters", s_row)
-        card = self._card(scroll, s_row)
-        s_row += 1
+        card = self._card(scroll, s_row); s_row += 1
         self._field_row(card, 0, "Stop timeout (s)", "stop_timeout", "60", col=0,
                         help="Time (seconds) Locust waits for running users to finish\ntheir current task after the test ends.\nIncrease for long-running requests.")
         self._field_row(card, 0, "Processes", "processes", "-1", col=2,
@@ -1180,18 +1307,73 @@ class LocustGUI(ctk.CTk):
         self._field_row(card, 1, "Read timeout (s)", "read_timeout", "15", col=2,
                         help="Maximum time (seconds) to wait for a server response.\nIncrease for endpoints with slow processing times.")
 
-        # ── Locustfile ────────────────────────────────────────────
-        s_row = self._card_header(scroll, "Locustfile", s_row)
+        # ── Request Settings ───────────────────────────────────────
+        s_row = self._card_header(scroll, "Request Settings", s_row)
         card_lf = self._card(scroll, s_row)
         s_row += 1
 
-        ctk.CTkLabel(card_lf, text="File", font=ctk.CTkFont(size=15),
-                     text_color=C_LABEL, anchor="w", width=self.LBL_W
-                     ).grid(row=0, column=0, padx=(16, 8), pady=10, sticky="w")
-        p["locustfile_label"] = ctk.CTkLabel(
-            card_lf, text="default: Locustfile_http.py",
-            font=ctk.CTkFont(size=11), text_color=C_MUTED, anchor="w"
+        ctk.CTkLabel(
+            card_lf,
+            text="HTTP method",
+            font=ctk.CTkFont(size=15),
+            text_color=C_TEXT,
+            anchor="w",
+            width=self.LBL_W
+        ).grid(row=0, column=0, padx=(16, 8), pady=10, sticky="w")
+
+        self._http_method_combo = ctk.CTkComboBox(
+            card_lf,
+            values=["GET", "POST"],
+            width=self.ENTR_W,
+            fg_color=C_ENTRY,
+            button_color=C_ACTIVE,
+            button_hover_color=C_HOVER,
+            dropdown_fg_color=C_CARD,
+            dropdown_text_color=C_TEXT,
+            command=self._on_http_method_change
         )
+        self._http_method_combo.set(os.getenv("HTTP_METHOD", "GET"))
+        self._http_method_combo.grid(row=0, column=1, padx=(0, 16), pady=10, sticky="ew")
+
+        self.entries["http_method"] = self._http_method_combo
+        self._request_body_frame = ctk.CTkFrame(card_lf, fg_color="transparent")
+        self._request_body_frame.grid(row=1, column=0, columnspan=4, sticky="ew")
+        self._request_body_frame.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            self._request_body_frame,
+            text="Request body JSON",
+            font=ctk.CTkFont(size=15),
+            text_color=C_TEXT,
+            anchor="w",
+            width=self.LBL_W
+        ).grid(row=0, column=0, padx=(16, 8), pady=10, sticky="nw")
+
+        self.request_body_text = ctk.CTkTextbox(
+            self._request_body_frame,
+            height=90,
+            corner_radius=8,
+            font=ctk.CTkFont(size=12, family="Courier New"),
+            fg_color=C_ENTRY,
+            text_color=C_TEXT
+        )
+        self.request_body_text.grid(
+            row=0,
+            column=1,
+            columnspan=3,
+            padx=(0, 16),
+            pady=10,
+            sticky="ew"
+        )
+
+        ctk.CTkLabel(
+            card_lf,
+            text="HTTP method",
+            font=ctk.CTkFont(size=15),
+            text_color=C_TEXT,
+            anchor="w",
+            width=self.LBL_W
+        ).grid(row=0, column=0, padx=(16, 8), pady=10, sticky="w")
         p["locustfile_label"].grid(row=0, column=1, padx=(0, 8), pady=10, sticky="ew")
         ctk.CTkButton(card_lf, text="Browse", width=80,
                       fg_color=C_ENTRY, hover_color=C_HOVER,
@@ -1230,7 +1412,7 @@ class LocustGUI(ctk.CTk):
     # ================================================================
     def _build_page_tcp(self, parent):
         p = {}
-        self.pages["TCP"] = p
+        self._pages["TCP"] = p
         outer = ctk.CTkFrame(parent, fg_color="transparent", corner_radius=0)
         outer.grid(row=0, column=0, sticky="nsew")
         outer.grid_columnconfigure(0, weight=1)
@@ -1243,6 +1425,12 @@ class LocustGUI(ctk.CTk):
 
         s_row = 0
 
+        default_body = os.getenv("REQUEST_BODY", "").strip()
+        if default_body:
+            self.request_body_text.insert("0.0", default_body)
+
+        # Nastaví viditeľnosť Request body podľa aktuálnej HTTP metódy
+        self._on_http_method_change(self._http_method_combo.get())
         # ── Define Test ───────────────────────────────────────────
         s_row = self._card_header(scroll, "Define Test", s_row)
         card_test = self._card(scroll, s_row)
@@ -1269,24 +1457,45 @@ class LocustGUI(ctk.CTk):
         card_lf = self._card(scroll, s_row)
         s_row += 1
 
-        ctk.CTkLabel(card_lf, text="File", font=ctk.CTkFont(size=15),
-                     text_color=C_LABEL, anchor="w", width=self.LBL_W
-                     ).grid(row=0, column=0, padx=(16, 8), pady=10, sticky="w")
+        ctk.CTkLabel(
+            card_lf,
+            text="File",
+            font=ctk.CTkFont(size=15),
+            text_color=C_LABEL,
+            anchor="w",
+            width=self.LBL_W
+        ).grid(row=0, column=0, padx=(16, 8), pady=10, sticky="w")
+
         p["locustfile_label"] = ctk.CTkLabel(
-            card_lf, text="default: Locust_tcp.py",
-            font=ctk.CTkFont(size=11), text_color=C_MUTED, anchor="w"
+            card_lf,
+            text="default: Locustfile_http.py",
+            font=ctk.CTkFont(size=11),
+            text_color=C_MUTED,
+            anchor="w"
         )
         p["locustfile_label"].grid(row=0, column=1, padx=(0, 8), pady=10, sticky="ew")
-        ctk.CTkButton(card_lf, text="Browse", width=80,
-                      fg_color=C_ENTRY, hover_color=C_HOVER,
-                      font=ctk.CTkFont(size=12), corner_radius=6,
-                      command=self._browse_locustfile
-                      ).grid(row=0, column=2, padx=(0, 8), pady=10)
-        ctk.CTkButton(card_lf, text="✖", width=36,
-                      fg_color=darken(C_DANGER, 10), hover_color=C_DANGER,
-                      font=ctk.CTkFont(size=12), corner_radius=6,
-                      command=self._clear_locustfile
-                      ).grid(row=0, column=3, padx=(0, 16), pady=10)
+
+        ctk.CTkButton(
+            card_lf,
+            text="Browse",
+            width=80,
+            fg_color=C_ENTRY,
+            hover_color=C_HOVER,
+            font=ctk.CTkFont(size=12),
+            corner_radius=6,
+            command=self._browse_locustfile
+        ).grid(row=0, column=2, padx=(0, 8), pady=10)
+
+        ctk.CTkButton(
+            card_lf,
+            text="✖",
+            width=36,
+            fg_color=darken(C_DANGER, 10),
+            hover_color=C_DANGER,
+            font=ctk.CTkFont(size=12),
+            corner_radius=6,
+            command=self._clear_locustfile
+        ).grid(row=0, column=3, padx=(0, 16), pady=10)
 
         # ── Actions  ────────────────────────────────
         bf = ctk.CTkFrame(outer, fg_color=C_CONTENT, height=48)
@@ -1294,11 +1503,17 @@ class LocustGUI(ctk.CTk):
         bf.grid_propagate(False)
         bf.grid_columnconfigure(0, weight=1)
 
-        p["runbtn"] = ctk.CTkButton(bf, text="▶ Start Test", width=150, height=32,
-                                    fg_color=C_SUCCESS, hover_color=darken(C_SUCCESS, 25),
-                                    font=ctk.CTkFont(size=12), corner_radius=6,
-                                    command=self.run_test
-                                    )
+        p["runbtn"] = ctk.CTkButton(
+            bf,
+            text="▶ Start Test",
+            width=150,
+            height=32,
+            fg_color=C_SUCCESS,
+            hover_color=darken(C_SUCCESS, 25),
+            font=ctk.CTkFont(size=12),
+            corner_radius=6,
+            command=self.run_test
+        )
         p["runbtn"].grid(row=0, column=1, padx=4, pady=8)
 
         p["stopbtn"] = ctk.CTkButton(bf, text="■ Stop", width=150, height=32,
@@ -1314,7 +1529,7 @@ class LocustGUI(ctk.CTk):
     # ================================================================
     def _build_page_udp(self, parent):
         p = {}
-        self.pages["UDP"] = p
+        self._pages["UDP"] = p
         outer = ctk.CTkFrame(parent, fg_color="transparent", corner_radius=0)
         outer.grid(row=0, column=0, sticky="nsew")
         outer.grid_columnconfigure(0, weight=1)
@@ -1388,11 +1603,18 @@ class LocustGUI(ctk.CTk):
                                     )
         p["runbtn"].grid(row=0, column=1, padx=4, pady=8)
 
-        p["stopbtn"] = ctk.CTkButton(bf, text="■ Stop", width=150, height=32,
-                                     fg_color="#3a3a3a", hover_color=C_DANGER,
-                                     font=ctk.CTkFont(size=12), corner_radius=6,
-                                     state="disabled", command=self.stop_locust
-                                     )
+        p["stopbtn"] = ctk.CTkButton(
+            bf,
+            text="■ Stop",
+            width=150,
+            height=32,
+            fg_color="#3a3a3a",
+            hover_color=C_DANGER,
+            font=ctk.CTkFont(size=12),
+            corner_radius=6,
+            state="disabled",
+            command=self.stop_locust
+        )
         p["stopbtn"].grid(row=0, column=2, padx=(4, 16), pady=8)
 
         return outer
@@ -1436,7 +1658,7 @@ class LocustGUI(ctk.CTk):
     # ================================================================
 
     def _load_preset(self, name):
-        p = self.pages[self._active_page]
+        p = self._pages[self._active_page]
 
         if "preset_btn_widgets" not in p:
             return
@@ -1450,7 +1672,7 @@ class LocustGUI(ctk.CTk):
         self._render_stage_rows()
 
     def _add_stage_row(self, tab = None):
-        p = self.pages[self._active_page]
+        p = self._pages[self._active_page]
         p["stages"] = self._get_stages()
         last = p["stages"][-1] if p["stages"] else {"duration": 0, "users": 0, "spawn_rate": 2}
         p["stages"].append({
@@ -1460,17 +1682,18 @@ class LocustGUI(ctk.CTk):
         })
         for btn in p["preset_btn_widgets"].values():
             btn.configure(fg_color=C_ENTRY, text_color=C_TEXT)
+
         self._render_stage_rows()
 
     def _del_stage_row(self, idx):
-        p = self.pages[self._active_page]
+        p = self._pages[self._active_page]
         if len(p["stages"]) > 1:
             p["stages"] = self._get_stages()
             p["stages"].pop(idx)
             self._render_stage_rows()
 
     def _render_stage_rows(self):
-        p = self.pages[self._active_page]
+        p = self._pages[self._active_page]
         frame = p["stages_frame"]
         for w in frame.winfo_children():
             if int(w.grid_info().get("row", 0)) >= 1:
@@ -1486,7 +1709,7 @@ class LocustGUI(ctk.CTk):
                     font=ctk.CTkFont(size=12, family="Courier New")
                 )
                 e.insert(0, str(stage[key]))
-                e.grid(row=i + 1, column=col, padx=(0, 4), pady=3, sticky="ew")
+                e.grid(row=i+1, column=col, padx=(0, 4), pady=3, sticky="ew")
                 e.bind("<FocusOut>", lambda event: self._update_stage_totals())
                 row_entries[key] = e
 
@@ -1499,7 +1722,7 @@ class LocustGUI(ctk.CTk):
                 font=ctk.CTkFont(size=11)
             )
             cb.set(stage.get("wait_mode", "between"))
-            cb.grid(row=i + 1, column=3, padx=(0, 4), pady=3, sticky="ew")
+            cb.grid(row=i+1, column=3, padx=(0, 4), pady=3, sticky="ew")
             row_entries["wait_mode"] = cb
 
             e_min = ctk.CTkEntry(
@@ -1507,7 +1730,7 @@ class LocustGUI(ctk.CTk):
                 font=ctk.CTkFont(size=12, family="Courier New")
             )
             e_min.insert(0, str(stage.get("wait_min", "1")))
-            e_min.grid(row=i + 1, column=4, padx=(0, 4), pady=3, sticky="ew")
+            e_min.grid(row=i+1, column=4, padx=(0, 4), pady=3, sticky="ew")
             row_entries["wait_min"] = e_min
 
             e_max = ctk.CTkEntry(
@@ -1515,10 +1738,10 @@ class LocustGUI(ctk.CTk):
                 font=ctk.CTkFont(size=12, family="Courier New")
             )
             e_max.insert(0, str(stage.get("wait_max", "3")))
-            e_max.grid(row=i + 1, column=5, padx=(0, 4), pady=3, sticky="ew")
+            e_max.grid(row=i+1, column=5, padx=(0, 4), pady=3, sticky="ew")
             row_entries["wait_max"] = e_max
 
-            def _on_wait_mode_change(mode, _row=i + 1, _emin=e_min, _emax=e_max):
+            def _on_wait_mode_change(mode, _row=i+1, _emin=e_min, _emax=e_max):
                 if mode == "between":
                     _emin.grid(row=_row, column=4, columnspan=1,
                                padx=(0, 4), pady=3, sticky="ew")
@@ -1550,47 +1773,66 @@ class LocustGUI(ctk.CTk):
                 fg_color="transparent", hover_color=C_DANGER,
                 font=ctk.CTkFont(size=11), corner_radius=4,
                 command=lambda idx=i: self._del_stage_row(idx)
-            ).grid(row=i + 1, column=6, padx=(2, 0), pady=3)
+            ).grid(row=i+1, column=6, padx=(2, 0), pady=3)
 
             p["stage_rows"].append(row_entries)
         self._update_stage_totals()
 
     def _get_stages(self):
         stages = []
-        p = self.pages[self._active_page]
+        p = self._pages[self._active_page]
         for i, row in enumerate(p["stage_rows"]):
             try:
-                wait_mode = row["wait_mode"].get()
+                wait_mode    = row["wait_mode"].get()
                 wait_max_raw = row["wait_max"].get().strip()
-                wait_min = float(row["wait_min"].get().strip() or 1)
-                wait_max = float(wait_max_raw) if wait_max_raw else wait_min
+                wait_min     = float(row["wait_min"].get().strip() or 1)
+                wait_max     = float(wait_max_raw) if wait_max_raw else wait_min
 
                 stages.append({
-                    "duration": int(row["duration"].get().strip() or 0),
-                    "users": int(row["users"].get().strip() or 0),
+                    "duration":   int(row["duration"].get().strip()   or 0),
+                    "users":      int(row["users"].get().strip()      or 0),
                     "spawn_rate": int(row["spawn_rate"].get().strip() or 1),
-                    "wait_mode": wait_mode,
-                    "wait_min": wait_min,
-                    "wait_max": wait_max,
+                    "wait_mode":  wait_mode,
+                    "wait_min":   wait_min,
+                    "wait_max":   wait_max,
                 })
             except (ValueError, KeyError) as e:
-                print(f"[WARN] Stage row {i + 1} skipped: {e}")
+                print(f"[WARN] Stage row {i+1} skipped: {e}")
         return stages
 
     def _update_stage_totals(self):
-        p = self.pages[self._active_page]
+        p = self._pages[self._active_page]
         try:
             stages = self._get_stages()
-            total_dur = stages[-1]["duration"] if stages else 0
-            max_users = max(s["users"] for s in stages) if stages else 0
+
+            total_dur = sum(
+                int(stage.get("duration", 0))
+                for stage in stages
+            ) if stages else 0
+
+            max_users = max(
+                int(stage.get("users", 0))
+                for stage in stages
+            ) if stages else 0
+
             m, s = divmod(total_dur, 60)
-            dur_str = f"{m}m {s}s" if m > 0 else f"{s}s"
+            h, m = divmod(m, 60)
+
+            if h > 0:
+                dur_str = f"{h}h {m}m {s}s"
+            elif m > 0:
+                dur_str = f"{m}m {s}s"
+            else:
+                dur_str = f"{s}s"
+
             p["stages_total_lbl"].configure(
                 text=f"Total: {dur_str}  •  Max users: {max_users}  •  Stages: {len(stages)}"
             )
-        except Exception:
-            pass
 
+        except Exception as e:
+            p["stages_total_lbl"].configure(
+                text=f"Total: invalid stage values"
+            )
     def _save_stages(self):
         stages = self._get_stages()
         with open(os.path.join(BASE_DIR, "stages.json"), "w") as f:
@@ -1617,6 +1859,7 @@ class LocustGUI(ctk.CTk):
 
         t_row = 0
 
+        # ── Comment ─────────────────────────────────────────────
         t_row = self._card_header(scroll, "Comment", t_row)
         self.comment_text = ctk.CTkTextbox(
             scroll, height=140, corner_radius=8,
@@ -1627,33 +1870,90 @@ class LocustGUI(ctk.CTk):
         self.comment_text.insert("0.0", "Write a comment for the report...")
         t_row += 1
 
+        # ── Output ──────────────────────────────────────────────
         t_row = self._card_header(scroll, "Output", t_row)
         card_out = ctk.CTkFrame(scroll, fg_color=C_CARD, corner_radius=10)
         card_out.grid(row=t_row, column=0, padx=16, pady=(0, 4), sticky="ew")
         card_out.grid_columnconfigure(1, weight=1)
         t_row += 1
 
-        ctk.CTkLabel(card_out, text="Report name", font=ctk.CTkFont(size=15),
-                     text_color=C_LABEL, anchor="w", width=self.LBL_W
-                     ).grid(row=0, column=0, padx=(16, 8), pady=10, sticky="w")
-        self._report_name_entry = ctk.CTkEntry(card_out, fg_color=C_ENTRY,
-                                               placeholder_text="Locust_Report")
+        ctk.CTkLabel(
+            card_out,
+            text="Report name",
+            font=ctk.CTkFont(size=15),
+            text_color=C_LABEL,
+            anchor="w",
+            width=self.LBL_W
+        ).grid(row=0, column=0, padx=(16, 8), pady=10, sticky="w")
+
+        self._report_name_entry = ctk.CTkEntry(
+            card_out,
+            fg_color=C_ENTRY,
+            placeholder_text="Locust_Report"
+        )
         self._report_name_entry.insert(0, "Locust_Report")
-        self._report_name_entry.grid(row=0, column=1, columnspan=2, padx=(0, 16), pady=10, sticky="ew")
+        self._report_name_entry.grid(
+            row=0,
+            column=1,
+            columnspan=2,
+            padx=(0, 16),
+            pady=10,
+            sticky="ew"
+        )
 
-        ctk.CTkLabel(card_out, text="Save to", font=ctk.CTkFont(size=15),
-                     text_color=C_LABEL, anchor="w", width=self.LBL_W
-                     ).grid(row=1, column=0, padx=(16, 8), pady=10, sticky="w")
-        self._report_dir_entry = ctk.CTkEntry(card_out, fg_color=C_ENTRY,
-                                              placeholder_text=REPORT_DIR)
+        ctk.CTkLabel(
+            card_out,
+            text="Save to",
+            font=ctk.CTkFont(size=15),
+            text_color=C_LABEL,
+            anchor="w",
+            width=self.LBL_W
+        ).grid(row=1, column=0, padx=(16, 8), pady=10, sticky="w")
+
+        self._report_dir_entry = ctk.CTkEntry(
+            card_out,
+            fg_color=C_ENTRY,
+            placeholder_text=REPORT_DIR
+        )
         self._report_dir_entry.insert(0, REPORT_DIR)
-        self._report_dir_entry.grid(row=1, column=1, padx=(0, 8), pady=10, sticky="ew")
-        ctk.CTkButton(card_out, text="Browse", width=80,
-                      fg_color=C_ENTRY, hover_color=C_HOVER,
-                      font=ctk.CTkFont(size=12), corner_radius=6,
-                      command=self._browse_save_dir
-                      ).grid(row=1, column=2, padx=(0, 16), pady=10)
+        self._report_dir_entry.grid(
+            row=1,
+            column=1,
+            padx=(0, 8),
+            pady=10,
+            sticky="ew"
+        )
 
+        ctk.CTkButton(
+            card_out,
+            text="Browse",
+            width=80,
+            fg_color=C_ENTRY,
+            hover_color=C_HOVER,
+            font=ctk.CTkFont(size=12),
+            corner_radius=6,
+            command=self._browse_save_dir
+        ).grid(row=1, column=2, padx=(0, 16), pady=10)
+
+        # Voliteľné zahrnutie detailnej tabuľky failures do PDF reportu
+        self._include_failures_var = ctk.BooleanVar(value=False)
+
+        ctk.CTkCheckBox(
+            card_out,
+            text="Include failure details table",
+            variable=self._include_failures_var,
+            font=ctk.CTkFont(size=12),
+            text_color=C_TEXT
+        ).grid(
+            row=2,
+            column=0,
+            columnspan=3,
+            padx=16,
+            pady=(0, 12),
+            sticky="w"
+        )
+
+        # ── PDF Signing ─────────────────────────────────────────
         t_row = self._card_header(scroll, "PDF Signing", t_row)
         card_sign = ctk.CTkFrame(scroll, fg_color=C_CARD, corner_radius=10)
         card_sign.grid(row=t_row, column=0, padx=16, pady=(0, 4), sticky="ew")
@@ -1661,59 +1961,118 @@ class LocustGUI(ctk.CTk):
         t_row += 1
 
         self._sign_var = ctk.BooleanVar(value=False)
-        ctk.CTkCheckBox(card_sign, text="Sign PDF", variable=self._sign_var,
-                        font=ctk.CTkFont(size=12), text_color=C_TEXT,
-                        command=self._on_sign_toggle
-                        ).grid(row=0, column=0, columnspan=3, padx=16, pady=(12, 8), sticky="w")
+
+        ctk.CTkCheckBox(
+            card_sign,
+            text="Sign PDF",
+            variable=self._sign_var,
+            font=ctk.CTkFont(size=12),
+            text_color=C_TEXT,
+            command=self._on_sign_toggle
+        ).grid(row=0, column=0, columnspan=3, padx=16, pady=(12, 8), sticky="w")
 
         self._cert_sign_frame = ctk.CTkFrame(card_sign, fg_color="transparent")
         self._cert_sign_frame.grid(row=1, column=0, columnspan=3, sticky="ew")
         self._cert_sign_frame.grid_columnconfigure(1, weight=1)
         self._cert_sign_frame.grid_remove()
 
-        ctk.CTkLabel(self._cert_sign_frame, text="Certificate", font=ctk.CTkFont(size=15),
-                     text_color=C_LABEL, anchor="w", width=self.LBL_W
-                     ).grid(row=0, column=0, padx=(16, 8), pady=8, sticky="w")
-        self._cert_path_entry = ctk.CTkEntry(self._cert_sign_frame, fg_color=C_ENTRY,
-                                             placeholder_text="Path to cert.p12")
+        ctk.CTkLabel(
+            self._cert_sign_frame,
+            text="Certificate",
+            font=ctk.CTkFont(size=15),
+            text_color=C_LABEL,
+            anchor="w",
+            width=self.LBL_W
+        ).grid(row=0, column=0, padx=(16, 8), pady=8, sticky="w")
+
+        self._cert_path_entry = ctk.CTkEntry(
+            self._cert_sign_frame,
+            fg_color=C_ENTRY,
+            placeholder_text="Path to cert.p12"
+        )
+
         default_cert = os.path.join(REPORT_DIR, "cert.p12")
         if os.path.exists(default_cert):
             self._cert_path_entry.insert(0, default_cert)
-        self._cert_path_entry.grid(row=0, column=1, padx=(0, 8), pady=8, sticky="ew")
-        ctk.CTkButton(self._cert_sign_frame, text="Browse", width=80,
-                      fg_color=C_ENTRY, hover_color=C_HOVER,
-                      font=ctk.CTkFont(size=12), corner_radius=6,
-                      command=self._browse_cert
-                      ).grid(row=0, column=2, padx=(0, 16), pady=8)
 
-        ctk.CTkLabel(self._cert_sign_frame, text="Password", font=ctk.CTkFont(size=15),
-                     text_color=C_LABEL, anchor="w", width=self.LBL_W
-                     ).grid(row=1, column=0, padx=(16, 8), pady=(0, 12), sticky="w")
-        self.cert_pass = ctk.CTkEntry(self._cert_sign_frame, show="•",
-                                      placeholder_text="Password for cert.p12",
-                                      fg_color=C_ENTRY)
-        self.cert_pass.grid(row=1, column=1, columnspan=2, padx=(0, 16), pady=(0, 12), sticky="ew")
-
-        ctk.CTkFrame(outer, height=1, fg_color=darken(C_CONTENT, 15)).grid(
-            row=1, column=0, sticky="ew"
+        self._cert_path_entry.grid(
+            row=0,
+            column=1,
+            padx=(0, 8),
+            pady=8,
+            sticky="ew"
         )
+
+        ctk.CTkButton(
+            self._cert_sign_frame,
+            text="Browse",
+            width=80,
+            fg_color=C_ENTRY,
+            hover_color=C_HOVER,
+            font=ctk.CTkFont(size=12),
+            corner_radius=6,
+            command=self._browse_cert
+        ).grid(row=0, column=2, padx=(0, 16), pady=8)
+
+        ctk.CTkLabel(
+            self._cert_sign_frame,
+            text="Password",
+            font=ctk.CTkFont(size=15),
+            text_color=C_LABEL,
+            anchor="w",
+            width=self.LBL_W
+        ).grid(row=1, column=0, padx=(16, 8), pady=(0, 12), sticky="w")
+
+        self.cert_pass = ctk.CTkEntry(
+            self._cert_sign_frame,
+            show="•",
+            placeholder_text="Password for cert.p12",
+            fg_color=C_ENTRY
+        )
+        self.cert_pass.grid(
+            row=1,
+            column=1,
+            columnspan=2,
+            padx=(0, 16),
+            pady=(0, 12),
+            sticky="ew"
+        )
+
+        # ── Bottom buttons ──────────────────────────────────────
+        ctk.CTkFrame(
+            outer,
+            height=1,
+            fg_color=darken(C_CONTENT, 15)
+        ).grid(row=1, column=0, sticky="ew")
 
         bf = ctk.CTkFrame(outer, fg_color=C_CONTENT, height=48)
         bf.grid(row=2, column=0, sticky="ew", padx=0, pady=0)
         bf.grid_propagate(False)
         bf.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkButton(bf, text="📄 Generate Report", width=150, height=32,
-                      fg_color=C_PURPLE, hover_color=darken(C_PURPLE, 25),
-                      font=ctk.CTkFont(size=12), corner_radius=6,
-                      command=self._generate_report
-                      ).grid(row=0, column=1, padx=4, pady=8)
+        ctk.CTkButton(
+            bf,
+            text="📄 Generate Report",
+            width=150,
+            height=32,
+            fg_color=C_PURPLE,
+            hover_color=darken(C_PURPLE, 25),
+            font=ctk.CTkFont(size=12),
+            corner_radius=6,
+            command=self._generate_report
+        ).grid(row=0, column=1, padx=4, pady=8)
 
-        ctk.CTkButton(bf, text="🗑 Delete Data", width=110, height=32,
-                      fg_color=C_DANGER, hover_color=darken(C_DANGER, 25),
-                      font=ctk.CTkFont(size=12), corner_radius=6,
-                      command=self._delete_data
-                      ).grid(row=0, column=2, padx=(4, 16), pady=8)
+        ctk.CTkButton(
+            bf,
+            text="🗑 Delete Data",
+            width=110,
+            height=32,
+            fg_color=C_DANGER,
+            hover_color=darken(C_DANGER, 25),
+            font=ctk.CTkFont(size=12),
+            corner_radius=6,
+            command=self._delete_data
+        ).grid(row=0, column=2, padx=(4, 16), pady=8)
 
         return outer
 
@@ -1746,17 +2105,17 @@ class LocustGUI(ctk.CTk):
         )
         if path:
             self._locustfile_paths[self._active_page] = path
-            self.pages[self._active_page]["locustfile_label"].configure(text=os.path.basename(path), text_color=C_TEXT)
+            self._pages[self._active_page]["locustfile_label"].configure(text=os.path.basename(path), text_color=C_TEXT)
             self.write_log(f"✓ [{self._active_page}] Locustfile: {os.path.basename(path)}")
 
     def _clear_locustfile(self):
         self.locustfile_path = None
-        self.pages[self._active_page]["locustfile_label"].configure(text="default: Locustfile_http.py", text_color=C_MUTED)
+        self._pages[self._active_page]["locustfile_label"].configure(text="default: Locustfile_http.py", text_color=C_MUTED)
         self.write_log("↩ Locustfile reset to default")
 
     def _delete_data(self):
         deleted = []
-        errors = []
+        errors  = []
         for f in glob.glob(os.path.join(DATA_DIR, "*.csv")):
             try:
                 os.remove(f)
@@ -1897,9 +2256,9 @@ class LocustGUI(ctk.CTk):
                 continue
             fpath = os.path.join(REPORT_DIR, fname)
             try:
-                ctime = os.path.getmtime(fpath)
+                ctime    = os.path.getmtime(fpath)
                 date_str = time.strftime("%d-%m-%y  %H:%M", time.localtime(ctime))
-                signed = self._is_pdf_signed(fpath)
+                signed   = self._is_pdf_signed(fpath)
                 reports.append((fname, date_str, signed, fpath))
             except Exception:
                 pass
@@ -1934,8 +2293,8 @@ class LocustGUI(ctk.CTk):
                          text_color=C_LABEL, anchor="w"
                          ).grid(row=0, column=1, padx=8, sticky="w")
 
-            sign_text = "✅ Signed" if signed else "❌ No"
-            sign_color = "#00cc00" if signed else "#ff1a1a"
+            sign_text  = "✅ Signed" if signed else "❌ No"
+            sign_color = "#00cc00"  if signed else "#ff1a1a"
             ctk.CTkLabel(row_frame, text=sign_text,
                          font=ctk.CTkFont(size=16), text_color=sign_color, anchor="w"
                          ).grid(row=0, column=2, padx=8, sticky="w")
@@ -2063,32 +2422,89 @@ class LocustGUI(ctk.CTk):
     def _get_ip_end(self):
         if self._active_ip_version() == "ipv6":
             if self.ipv6_mode.get() == "prefix":
-                import ipaddress
-                net = ipaddress.IPv6Network(self.entries["ip6_prefix"].get().strip(), strict=False)
-                hosts = list(net.hosts())
-                return str(hosts[min(255, len(hosts) - 1)])
+                ip_list = ipv6_prefix_to_list(
+                    self.entries["ip6_prefix"].get().strip(),
+                    max_count=256
+                )
+                return ip_list[-1] if ip_list else ""
             return self.entries["ip6_end"].get().strip()
         return self.entries["ip_end"].get().strip()
 
-    def _get_ip_list(self):
+    def _get_ip_list(self, existing_entries=None):
         if self._active_ip_version() == "ipv6":
             if self.ipv6_mode.get() == "prefix":
-                return ipv6_prefix_to_list(self.entries["ip6_prefix"].get().strip())
+                existing_ips = set()
+
+                if existing_entries:
+                    existing_ips = {ip for ip, _ in existing_entries}
+
+                excluded_ips = set()
+                target_ip = self._get_target_ip_for_pool_exclusion()
+
+                if target_ip:
+                    excluded_ips.add(target_ip)
+
+                return ipv6_prefix_to_list(
+                    self.entries["ip6_prefix"].get().strip(),
+                    max_count=256,
+                    existing_ips=existing_ips,
+                    excluded_ips=excluded_ips
+                )
+
             return ipv6_range_to_list(self._get_ip_start(), self._get_ip_end())
+
         return None
 
     def _get_target_clean(self):
         return urlparse(self.get("target")).hostname or self.get("target")
 
+    def _get_target_ip_for_pool_exclusion(self):
+        """
+        Returns target IP address if the target host is an IP literal.
+        Used to prevent adding the server/target IP into the source IP pool.
+        """
+        try:
+            host = urlparse(self.get("target")).hostname or self.get("target")
+            host = str(host).strip().lstrip("[").rstrip("]")
+
+            try:
+                ipaddress.IPv6Address(host)
+                return host
+            except ValueError:
+                pass
+
+            try:
+                ipaddress.IPv4Address(host)
+                return host
+            except ValueError:
+                pass
+
+        except Exception:
+            pass
+
+        return None
+
+
     def _get_source_range(self):
         start = self._get_ip_start()
-        end = self._get_ip_end()
+        end   = self._get_ip_end()
         return f"{start} - {end}"
 
     def _get_prefix_len(self):
         """Vráti aktuálny prefix ako reťazec podľa aktívnej IP verzie."""
         if self._active_ip_version() == "ipv6":
+            if self.ipv6_mode.get() == "prefix":
+                try:
+                    net = ipaddress.IPv6Network(
+                        self.entries["ip6_prefix"].get().strip(),
+                        strict=False
+                    )
+                    return str(net.prefixlen)
+                except Exception:
+                    return "64"
+
             return self.entries["ipv6rangeprefix"].get()
+
         return self.entries["ipv4prefix"].get()
 
     # ================================================================
@@ -2135,6 +2551,18 @@ class LocustGUI(ctk.CTk):
 
     def get(self, key):
         return self.entries[key].get().strip()
+    def get_request_body(self):
+        if not hasattr(self, "request_body_text"):
+            return ""
+        return self.request_body_text.get("0.0", "end").strip()
+
+    def _on_http_method_change(self, method=None):
+        method = method or self.get("http_method")
+
+        if method == "POST":
+            self._request_body_frame.grid()
+        else:
+            self._request_body_frame.grid_remove()
 
     def get_comment(self):
         text = self.comment_text.get("0.0", "end").strip()
@@ -2143,7 +2571,7 @@ class LocustGUI(ctk.CTk):
         return text
 
     def _save_port_pool(self):
-        port_str = self.get("src_ports")
+        port_str  = self.get("src_ports")
         port_file = os.path.join(BASE_DIR, "port_pool.txt")
         if port_str:
             ports = parse_ports(port_str)
@@ -2164,10 +2592,23 @@ class LocustGUI(ctk.CTk):
                 self.write_log("ℹ Source ports: OS assigned automatically")
 
     def _save_test_config(self, script_dir):
-        config_file = os.path.join(script_dir, "test_config.csv")
+        config_file  = os.path.join(script_dir, "test_config.csv")
         target_clean = self._get_target_clean()
-        ip_ver = self._active_ip_version()
-        clean = target_clean.split(":")[0].lstrip("[").split("]")[0]
+        ip_ver       = self._active_ip_version()
+
+        # Correct host extraction for IPv4, IPv6 and hostnames.
+        # Examples:
+        #   http://192.168.100.73:8080        -> 192.168.100.73
+        #   http://[fd00:100::73]:8080        -> fd00:100::73
+        #   https://www.example.com           -> www.example.com
+        try:
+            parsed = urlparse(self.get("target"))
+            clean = parsed.hostname or target_clean
+        except Exception:
+            clean = target_clean
+
+        clean = str(clean).strip().lstrip("[").rstrip("]")
+
         try:
             socket.inet_pton(socket.AF_INET6, clean)
             resolved_ip = clean
@@ -2185,87 +2626,149 @@ class LocustGUI(ctk.CTk):
                     except Exception:
                         resolved_ip = clean
 
-        src_ip = self.get("reach_src_ip") or self._get_ip_start()
+        src_ip      = self.get("reach_src_ip")    or self._get_ip_start()
         reach_iface = self.get("reach_interface") or self.get("interface")
 
-        pool_file = os.path.join(BASE_DIR, "ip_pool.txt")
+        pool_file  = os.path.join(BASE_DIR, "ip_pool.txt")
         pool_count = 0
-        pool_ips = ""
+        pool_ips   = ""
         if os.path.exists(pool_file):
             entries = parse_pool_lines(pool_file)
             pool_count = len(entries)
             if entries:
                 first_ip = entries[0][0]
-                last_ip = entries[-1][0]
-                prefix = entries[0][1] or self._get_prefix_len()
+                last_ip  = entries[-1][0]
+                prefix   = entries[0][1] or self._get_prefix_len()
                 pool_ips = f"{first_ip}/{prefix} - {last_ip}/{prefix}"
 
         with open(config_file, "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=[
                 "target", "target_clean", "target_ip", "ip_start", "ip_end",
-                "source_range", "ip_pool_count", "ip_pool_range", "src_ports", "ip_version", "interface",
-                "processes", "stop_timeout",
+                "source_range", "ip_pool_count", "ip_pool_range", "src_ports",
+                "ip_version", "interface",
+
+                "http_method", "endpoint_path",
+                "processes", "stop_timeout", "connect_timeout", "read_timeout",
+
                 "reach_interval", "reach_timeout", "reach_src_ip", "reach_interface",
-                "reach_threshold", "test_type",
+                "request_threshold", "reach_threshold", "test_type",
             ])
             writer.writeheader()
             writer.writerow({
-                "target": self.get("target"),
-                "target_clean": target_clean,
-                "target_ip": resolved_ip,
-                "ip_start": self._get_ip_start(),
-                "ip_end": self._get_ip_end(),
-                "source_range": self._get_source_range(),
-                "ip_pool_count": pool_count,
-                "ip_pool_range": pool_ips,
-                "src_ports": self.get("src_ports"),
-                "ip_version": ip_ver,
-                "interface": self.get("interface"),
-                "reach_interval": self.get("reach_interval") or "5",
-                "reach_timeout": self.get("reach_timeout") or "5",
-                "reach_src_ip": src_ip,
-                "reach_interface": reach_iface,
-                "reach_threshold": self.get("reach_threshold") or "50",
-                "processes": self.get("processes"),
-                "stop_timeout": self.get("stop_timeout") or "60",
-                "test_type": self.get("test_type"),
+                "target":           self.get("target"),
+                "target_clean":     target_clean,
+                "target_ip":        resolved_ip,
+                "ip_start":         self._get_ip_start(),
+                "ip_end":           self._get_ip_end(),
+                "source_range":     self._get_source_range(),
+                "ip_pool_count":    pool_count,
+                "ip_pool_range":    pool_ips,
+                "src_ports":        self.get("src_ports"),
+                "ip_version":       ip_ver,
+                "interface":        self.get("interface"),
+                "reach_interval":   self.get("reach_interval") or "5",
+                "reach_timeout":    self.get("reach_timeout") or "5",
+                "reach_src_ip":     src_ip,
+                "reach_interface":  reach_iface,
+                "request_threshold": self.get("request_threshold") or "1",
+                "reach_threshold":  self.get("reach_threshold") or "5",
+                "http_method":      self.get("http_method") or "GET",
+                "endpoint_path":    normalize_endpoint_paths(self.get("endpoint_path") or "/"),
+                "processes":        self.get("processes"),
+                "stop_timeout":     self.get("stop_timeout") or "60",
+                "connect_timeout":  self.get("connect_timeout") or "5",
+                "read_timeout":     self.get("read_timeout") or "15",
+                "test_type":        self.get("test_type"),
             })
         self.write_log(f"✓ Config saved → {target_clean} ({resolved_ip}) [{ip_ver.upper()}]")
 
     def _load_test_config(self, script_dir):
         config_file = os.path.join(script_dir, "test_config.csv")
+
+        def _clean_csv_value(value, fallback=""):
+            if pd.isna(value):
+                return fallback
+
+            value = str(value).strip()
+
+            if value.lower() in ("nan", "none", "null", ""):
+                return fallback
+
+            return value
+
         if os.path.exists(config_file):
             try:
                 cfg = pd.read_csv(config_file).iloc[0]
-                target_clean = str(cfg.get("target_clean", self._get_target_clean()))
-                target_ip = str(cfg.get("target_ip", target_clean))
-                source_range = str(cfg.get("source_range", self._get_source_range()))
-                ip_pool_count = str(cfg.get("ip_pool_count", ""))
-                ip_pool_range = str(cfg.get("ip_pool_range", ""))
-                interface = str(cfg.get("interface", self.get("interface")))
-                reach_src_ip = str(cfg.get("reach_src_ip", self.get("reach_src_ip")))
-                reach_threshold = float(cfg.get("reach_threshold", 50))
-                test_type_cfg = str(cfg.get("test_type", self.get("test_type")))
-                processes = str(cfg.get("processes", self.get("processes")))
-                stop_timeout = str(cfg.get("stop_timeout", self.get("stop_timeout") or "60"))
-                self.write_log(f"✓ Params: {target_clean} | {source_range} | threshold={reach_threshold}%")
-                return (target_clean, target_ip, source_range, interface,
-                        reach_threshold, test_type_cfg, processes, stop_timeout,
-                        reach_src_ip, ip_pool_count, ip_pool_range)
+
+                target_clean  = _clean_csv_value(cfg.get("target_clean", ""), self._get_target_clean())
+                target_ip     = _clean_csv_value(cfg.get("target_ip", ""), target_clean)
+                source_range  = _clean_csv_value(cfg.get("source_range", ""), self._get_source_range())
+                ip_pool_count = _clean_csv_value(cfg.get("ip_pool_count", ""), "")
+                ip_pool_range = _clean_csv_value(cfg.get("ip_pool_range", ""), "")
+                interface     = _clean_csv_value(cfg.get("interface", ""), self.get("interface"))
+
+                reach_src_ip       = _clean_csv_value(cfg.get("reach_src_ip", ""), self.get("reach_src_ip") or self._get_ip_start())
+                reach_interface    = _clean_csv_value(cfg.get("reach_interface", ""), self.get("reach_interface") or self.get("interface"))
+                reach_interval_cfg = _clean_csv_value(cfg.get("reach_interval", ""), self.get("reach_interval") or "5")
+                reach_timeout_cfg  = _clean_csv_value(cfg.get("reach_timeout", ""), self.get("reach_timeout") or "5")
+
+                src_ports = _clean_csv_value(cfg.get("src_ports", ""), "")
+
+                request_threshold = float(
+                    _clean_csv_value(cfg.get("request_threshold", ""), self.get("request_threshold") or "1")
+                )
+                reach_threshold = float(
+                    _clean_csv_value(cfg.get("reach_threshold", ""), self.get("reach_threshold") or "5")
+                )
+
+                test_type_cfg = _clean_csv_value(cfg.get("test_type", ""), self.get("test_type"))
+                processes     = _clean_csv_value(cfg.get("processes", ""), self.get("processes"))
+                stop_timeout  = _clean_csv_value(cfg.get("stop_timeout", ""), self.get("stop_timeout") or "60")
+
+                http_method = _clean_csv_value(cfg.get("http_method", ""), self.get("http_method") or "GET")
+                endpoint_path = normalize_endpoint_paths(
+                    _clean_csv_value(cfg.get("endpoint_path", ""), self.get("endpoint_path") or "/")
+                )
+                connect_timeout = _clean_csv_value(cfg.get("connect_timeout", ""), self.get("connect_timeout") or "5")
+                read_timeout    = _clean_csv_value(cfg.get("read_timeout", ""), self.get("read_timeout") or "15")
+
+                self.write_log(
+                    f"✓ Params: {target_clean} | {source_range} | "
+                    f"request_threshold={request_threshold}% | reach_threshold={reach_threshold}%"
+                )
+
+                return (
+                    target_clean, target_ip, source_range, interface,
+                    request_threshold, reach_threshold, test_type_cfg, processes, stop_timeout,
+                    reach_src_ip, ip_pool_count, ip_pool_range,
+                    http_method, endpoint_path, connect_timeout, read_timeout,
+                    src_ports, reach_interval_cfg, reach_timeout_cfg, reach_interface
+                )
+
             except Exception as e:
                 self.write_log(f"⚠ Error reading config: {e}")
+
         return (
             self._get_target_clean(),
             self._get_target_clean(),
             self._get_source_range(),
             self.get("interface"),
-            float(self.get("reach_threshold") or 50),
+            float(self.get("request_threshold") or 1),
+            float(self.get("reach_threshold") or 5),
             self.get("test_type"),
             self.get("processes"),
             self.get("stop_timeout") or "60",
             self.get("reach_src_ip") or self._get_ip_start(),
             "0",
             "",
+            self.get("http_method") or "GET",
+            normalize_endpoint_paths(self.get("endpoint_path") or "/"),
+            self.get("connect_timeout") or "5",
+            self.get("read_timeout") or "15",
+            self.get("src_ports") or "",
+            self.get("reach_interval") or "5",
+            self.get("reach_timeout") or "5",
+            self.get("reach_interface") or self.get("interface"),
         )
 
     # ================================================================
@@ -2295,10 +2798,11 @@ class LocustGUI(ctk.CTk):
         try:
             self.write_log("=" * 60)
             self.write_log("▶ SETUP – Adding IPs to interface...")
-            ip_ver = self._active_ip_version()
-            prefix_len = self._get_prefix_len()
+
+            ip_ver      = self._active_ip_version()
+            prefix_len  = self._get_prefix_len()
             custom_file = self._custom_pool_entry.get().strip()
-            pool_path = os.path.join(BASE_DIR, "ip_pool.txt")
+            pool_path   = os.path.join(BASE_DIR, "ip_pool.txt")
 
             existing_entries = []
             if os.path.exists(pool_path):
@@ -2314,43 +2818,67 @@ class LocustGUI(ctk.CTk):
                 if not os.path.exists(custom_file):
                     self.write_log(f"✗ Custom pool file not found: {custom_file}")
                     return
+
                 entries = parse_pool_lines(custom_file)
                 if not entries:
                     self.write_log("✗ Custom pool file is empty")
                     return
-                ip_list = [ip for ip, _ in entries]
+
+                ip_list      = [ip for ip, _ in entries]
                 first_prefix = entries[0][1] if entries[0][1] else prefix_len
+
                 self.write_log(
                     f"📂 Custom pool: {len(ip_list)} IPs, prefix=/{first_prefix} loaded"
                 )
+
                 create_pool(
-                    ip_start=ip_list[0],
-                    ip_end=ip_list[-1],
-                    interface=self.get("interface"),
-                    output_file=tmp_pool,
-                    ip_version=ip_ver,
-                    ip_list=ip_list,
-                    prefix_len=first_prefix,
+                    ip_start    = ip_list[0],
+                    ip_end      = ip_list[-1],
+                    interface   = self.get("interface"),
+                    output_file = tmp_pool,
+                    ip_version  = ip_ver,
+                    ip_list     = ip_list,
+                    prefix_len  = first_prefix,
                 )
+
                 self.write_log(f"✓ New IPs generated from custom file [{ip_ver.upper()}]")
+
             else:
+                generated_ip_list = self._get_ip_list(existing_entries)
+
+                if ip_ver == "ipv6" and self.ipv6_mode.get() == "prefix":
+                    if not generated_ip_list:
+                        self.write_log("✗ No available IPv6 addresses found in selected prefix")
+                        return
+
+                    self.write_log(
+                        f"ℹ IPv6 prefix mode: generated next block of "
+                        f"{len(generated_ip_list)} unused IP addresses"
+                    )
+
                 create_pool(
-                    ip_start=self._get_ip_start(),
-                    ip_end=self._get_ip_end(),
-                    interface=self.get("interface"),
-                    output_file=tmp_pool,
-                    ip_version=ip_ver,
-                    ip_list=self._get_ip_list(),
-                    prefix_len=prefix_len,
+                    ip_start    = generated_ip_list[0] if generated_ip_list else self._get_ip_start(),
+                    ip_end      = generated_ip_list[-1] if generated_ip_list else self._get_ip_end(),
+                    interface   = self.get("interface"),
+                    output_file = tmp_pool,
+                    ip_version  = ip_ver,
+                    ip_list     = generated_ip_list,
+                    prefix_len  = prefix_len,
                 )
+
                 self.write_log(f"✓ New IPs generated [{ip_ver.upper()}]")
 
             self._rewrite_pool_with_prefix(tmp_pool, prefix_len)
             new_entries = parse_pool_lines(tmp_pool) if os.path.exists(tmp_pool) else []
 
-            merged, added = self._merge_pool_entries(existing_entries, new_entries, prefix_len)
+            merged, added = self._merge_pool_entries(
+                existing_entries,
+                new_entries,
+                prefix_len
+            )
 
             self._write_pool_file(pool_path, merged, prefix_len)
+
             try:
                 os.remove(tmp_pool)
             except OSError:
@@ -2362,6 +2890,7 @@ class LocustGUI(ctk.CTk):
             )
             self.write_log("✓ SETUP COMPLETE")
             self.write_log("=" * 60)
+
         except Exception as e:
             self.write_log(f"✗ Setup error: {e}")
 
@@ -2371,8 +2900,8 @@ class LocustGUI(ctk.CTk):
         Vracia (merged list, počet pridaných).
         """
         seen_ips = {ip for ip, _ in existing}
-        added = 0
-        merged = list(existing)
+        added    = 0
+        merged   = list(existing)
         for ip, prefix in new_entries:
             if ip not in seen_ips:
                 merged.append((ip, prefix if prefix else default_prefix))
@@ -2415,12 +2944,12 @@ class LocustGUI(ctk.CTk):
 
         self._set_stop_enabled(True)
         threading.Thread(target=self._run_test_thread, daemon=True).start()
-        p = self.pages.get(self._active_page)
+        p = self._pages.get(self._active_page)
         p["runbtn"].configure(state="disabled")
         p["stopbtn"].configure(state="normal")
 
     def _set_stop_enabled(self, enabled):
-        p = self.pages.get(self._active_page)
+        p = self._pages.get(self._active_page)
         if p is None:
             return
         self._stop_enabled = enabled
@@ -2430,7 +2959,7 @@ class LocustGUI(ctk.CTk):
                 hover_color="#B7950B",
                 text="⏳ Running...",
                 text_color="white",
-                state="normal",
+                state="disabled",
                 command=lambda: None
             )
             p["stopbtn"].configure(
@@ -2440,6 +2969,7 @@ class LocustGUI(ctk.CTk):
                 state="normal",
                 command=self.stop_locust
             )
+
         else:
             p["runbtn"].configure(
                 fg_color=C_SUCCESS,
@@ -2453,7 +2983,7 @@ class LocustGUI(ctk.CTk):
                 fg_color="#3a3a3a",
                 hover_color="#3a3a3a",
                 text_color="#aaaaaa",
-                state="normal",
+                state="disabled",
                 command=lambda: None
             )
 
@@ -2536,7 +3066,7 @@ class LocustGUI(ctk.CTk):
                 self.write_log("✗ No valid stages — check Duration/Users/Spawn rate fields")
                 return
 
-            run_time = stages[-1]["duration"]
+            run_time = sum(int(s.get("duration", 0)) for s in stages)
             interval = int(self.get("reach_interval") or 5)
 
             self._save_port_pool()
@@ -2546,9 +3076,9 @@ class LocustGUI(ctk.CTk):
 
             interface = self.get("monitor_interface") or self.get("interface")
             self._network_monitor = NetworkMonitor(
-                interface=interface,
-                interval=1,
-                output_file=os.path.join(DATA_DIR, "network_usage.csv")
+                interface   = interface,
+                interval    = 1,
+                output_file = os.path.join(DATA_DIR, "network_usage.csv")
             )
             self._network_monitor.start()
             self.write_log(f"📡 Network monitor started on {interface}")
@@ -2567,17 +3097,21 @@ class LocustGUI(ctk.CTk):
                     BASE_DIR, "locust_tests", "Locustfile_http.py"
                 ),
                 "--headless",
-                "-H", self.get("target"),
+                "-H",             self.get("target"),
                 "--stop-timeout", self.get("stop_timeout") or "60",
-                "--processes", self.get("processes"),
-                "--csv", os.path.join(DATA_DIR, "report"),
+                "--processes",    self.get("processes"),
+                "--csv",          os.path.join(DATA_DIR, "report"),
             ]
             self.write_log(f"CMD: {' '.join(cmd)}")
             self.write_log("-" * 60)
 
             self.locust_process = subprocess.Popen(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True, bufsize=1, cwd=BASE_DIR
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                start_new_session=True
             )
             for line in self.locust_process.stdout:
                 line = line.rstrip()
@@ -2589,8 +3123,10 @@ class LocustGUI(ctk.CTk):
             self.write_log("-" * 60)
             if self.locust_process.returncode == 0:
                 self.write_log("✓ Locust test completed successfully")
+            elif self.locust_process.returncode == 1:
+                self.write_log("⚠ Locust test completed with request failures")
             else:
-                self.write_log(f"✗ Locust error (code {self.locust_process.returncode})")
+                self.write_log(f"✗ Locust process ended with error code {self.locust_process.returncode}")
             self.write_log("=" * 60)
 
         except Exception as e:
@@ -2602,15 +3138,82 @@ class LocustGUI(ctk.CTk):
                 self.write_log("📡 Network monitor stopped")
             self._set_stop_enabled(False)
 
+    # ================================================================
+    # terminate process
+    # ================================================================
+
+    def _terminate_process_group(self, process, name="process", timeout=5):
+        """
+        Terminates a process and all child processes in its process group.
+        This is needed for Locust when running with --processes -1.
+        """
+        if process is None:
+            return
+
+        if process.poll() is not None:
+            return
+
+        try:
+            pgid = os.getpgid(process.pid)
+            self.write_log(f"⏹ Stopping {name} process group PID={process.pid}, PGID={pgid}")
+
+            os.killpg(pgid, signal.SIGTERM)
+
+            try:
+                process.wait(timeout=timeout)
+                self.write_log(f"✓ {name} stopped")
+                return
+            except subprocess.TimeoutExpired:
+                self.write_log(f"⚠ {name} did not stop in {timeout}s, killing process group")
+                os.killpg(pgid, signal.SIGKILL)
+                process.wait(timeout=3)
+                self.write_log(f"✓ {name} killed")
+
+        except ProcessLookupError:
+            self.write_log(f"ℹ {name} already stopped")
+
+        except Exception as e:
+            self.write_log(f"⚠ Could not stop {name} process group: {e}")
+
+            try:
+                process.terminate()
+                process.wait(timeout=timeout)
+            except Exception:
+                try:
+                    process.kill()
+                except Exception:
+                    pass
+
     def stop_locust(self):
         if not self._stop_enabled:
             return
-        if self.locust_process and self.locust_process.poll() is None:
-            self.locust_process.terminate()
-            self.write_log("⛔ Locust test stopped by user")
+
+        self.write_log("⛔ Stop requested by user")
+
+        # Stop reachability thread
+        try:
             self._reach_stop_event.set()
+        except Exception:
+            pass
+
+        # Stop Locust master + all worker processes
+        self._terminate_process_group(
+            self.locust_process,
+            name="Locust",
+            timeout=5
+        )
+
+        # Stop network monitor immediately as well
+        try:
+            if self._network_monitor:
+                self._network_monitor.stop()
+                self._network_monitor = None
+                self.write_log("📡 Network monitor stopped")
+        except Exception as e:
+            self.write_log(f"⚠ Network monitor stop error: {e}")
+
         self._set_stop_enabled(False)
-        p = self.pages[self._active_page]
+        p = self._pages[self._active_page]
         p["runbtn"].configure(state="normal")
         p["stopbtn"].configure(state="disabled")
 
@@ -2628,15 +3231,17 @@ class LocustGUI(ctk.CTk):
                     output_dir=DATA_DIR
                 )
             elif self._active_page == "HTTP":
-               run_reachability_check(
-                 source_ip=self.get("reach_src_ip") or self._get_ip_start(),
-                 url=self.get("target"),
-                 interval=interval,
-                 duration=duration,
-                 timeout=float(self.get("reach_timeout") or 5),
-                 csv_file=os.path.join(DATA_DIR, "reachability.csv"),
-                 stop_event=self._reach_stop_event
-             )
+                reach_interface = self.get("reach_interface") or self.get("interface")
+                run_reachability_check(
+                    source_ip=self.get("reach_src_ip") or self._get_ip_start(),
+                    url=self.get("target"),
+                    interval=interval,
+                    duration=duration,
+                    timeout=float(self.get("reach_timeout") or 5),
+                    csv_file=os.path.join(DATA_DIR, "reachability.csv"),
+                    stop_event=self._reach_stop_event,
+                    interface=reach_interface,
+                )
             else:
                 self.write_log(f"✗ Unknown page: {self._active_page}")
         except Exception as e:
@@ -2652,8 +3257,10 @@ class LocustGUI(ctk.CTk):
     def _generate_report_thread(self):
         try:
             (target_clean, target_ip, source_range, interface,
-             reach_threshold, test_type_cfg, processes, stop_timeout,
-             reach_src_ip, ip_pool_count, ip_pool_range) = self._load_test_config(BASE_DIR)
+             request_threshold, reach_threshold, test_type_cfg, processes, stop_timeout,
+             reach_src_ip, ip_pool_count, ip_pool_range,
+             http_method, endpoint_path, connect_timeout, read_timeout,
+             src_ports, reach_interval_cfg, reach_timeout_cfg, reach_interface) = self._load_test_config(BASE_DIR)
 
             report_name = self._report_name_entry.get().strip() or "Locust_Report"
             if not report_name.endswith(".pdf"):
@@ -2665,29 +3272,41 @@ class LocustGUI(ctk.CTk):
             p12_path = self._cert_path_entry.get().strip() if sign else ""
             p12_pass = self.cert_pass.get().strip().encode() if sign else b""
 
+            include_failures = self._include_failures_var.get()
+
             self.write_log("=" * 60)
             self.write_log("▶ Generating PDF report...")
             create_pdf_report(
-                stats_file=os.path.join(DATA_DIR, "report_stats.csv"),
-                history_file=os.path.join(DATA_DIR, "report_stats_history.csv"),
-                reach_file=os.path.join(DATA_DIR, "reachability.csv"),
-                output_file=pdf_path,
-                meta_file=os.path.join(DATA_DIR, "report_metadata.csv"),
-                network_file=os.path.join(DATA_DIR, "network_usage.csv"),
-                comment=self.get_comment(),
-                target_ip=target_ip,
-                source_ip=source_range,
-                ip_pool_count=ip_pool_count,
-                ip_pool_range=ip_pool_range,
-                interface=interface,
-                reach_threshold=reach_threshold / 100,
-                test_type=test_type_cfg,
-                src_ports=self.get("src_ports") or None,
-                reach_src_ip=self.get("reach_src_ip") or self._get_ip_start(),
-                reach_timeout=float(self.get("reach_timeout") or 5),
-                sign=sign,
-                p12_path=p12_path,
-                p12_pass=p12_pass,
+                stats_file      = os.path.join(DATA_DIR, "report_stats.csv"),
+                history_file    = os.path.join(DATA_DIR, "report_stats_history.csv"),
+                reach_file   = os.path.join(DATA_DIR, "reachability.csv"),
+                output_file     = pdf_path,
+                meta_file       = os.path.join(DATA_DIR, "report_metadata.csv"),
+                network_file    = os.path.join(DATA_DIR, "network_usage.csv"),
+                comment         = self.get_comment(),
+                target_ip       = target_ip,
+                source_ip       = source_range,
+                ip_pool_count   = ip_pool_count,
+                ip_pool_range   = ip_pool_range,
+                interface       = interface,
+                request_threshold = request_threshold / 100,
+                reach_threshold = reach_threshold / 100,
+                test_type       = test_type_cfg,
+                src_ports       = src_ports or None,
+                http_method     = http_method,
+                endpoint_path   = endpoint_path,
+                processes       = processes,
+                stop_timeout    = stop_timeout,
+                connect_timeout = connect_timeout,
+                read_timeout    = read_timeout,
+                reach_interval  = reach_interval_cfg,
+                reach_timeout   = float(reach_timeout_cfg),
+                reach_src_ip    = reach_src_ip,
+                reach_interface = reach_interface,
+                include_failures = include_failures,
+                sign             = sign,
+                p12_path         = p12_path,
+                p12_pass         = p12_pass,
             )
             self.write_log(f"✓ {report_name} generated → {save_dir}")
             self.write_log("=" * 60)
@@ -2707,10 +3326,10 @@ class LocustGUI(ctk.CTk):
 
         os.makedirs(IP_POOL_DIR, exist_ok=True)
 
-        ip_ver = self._active_ip_version()
+        ip_ver     = self._active_ip_version()
         prefix_len = self._get_prefix_len()
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        suggested = f"pool_{ip_ver}_{timestamp}"
+        timestamp  = time.strftime("%Y%m%d_%H%M%S")
+        suggested  = f"pool_{ip_ver}_{timestamp}"
 
         dlg = SavePoolDialog(self, IP_POOL_DIR, suggested)
         if dlg.result_name is None:
@@ -2721,7 +3340,7 @@ class LocustGUI(ctk.CTk):
         if dlg.result_mode == "append" and dlg.result_target and os.path.exists(dlg.result_target):
             # ── Merge ─────────────────────────────────────────────
             existing = parse_pool_lines(dlg.result_target)
-            new_ips = parse_pool_lines(pool_src)
+            new_ips  = parse_pool_lines(pool_src)
 
             merged, added = self._merge_pool_entries(existing, new_ips, prefix_len)
 
@@ -2738,7 +3357,7 @@ class LocustGUI(ctk.CTk):
             else:
                 shutil.copy2(pool_src, dest)
 
-        fname = os.path.basename(dest)
+        fname      = os.path.basename(dest)
         pool_count = len(parse_pool_lines(dest))
         self.write_log(
             f"💾 Pool saved → ip_pool/{fname}  "
@@ -2757,8 +3376,8 @@ class LocustGUI(ctk.CTk):
             self.write_log("=" * 60)
             self.write_log("▶ Removing IP pool from interface...")
             prefix_len = self._get_prefix_len()
-            interface = self.get("interface")
-            pool_file = os.path.join(BASE_DIR, "ip_pool.txt")
+            interface  = self.get("interface")
+            pool_file  = os.path.join(BASE_DIR, "ip_pool.txt")
 
             if os.path.exists(pool_file):
                 entries = parse_pool_lines(pool_file)
@@ -2771,7 +3390,7 @@ class LocustGUI(ctk.CTk):
 
             groups = defaultdict(list)
             for ip, p in entries:
-                ver = "ipv6" if is_ipv6(ip) else "ipv4"
+                ver    = "ipv6" if is_ipv6(ip) else "ipv4"
                 prefix = p if p else ("128" if ver == "ipv6" else prefix_len)
                 groups[(ver, prefix)].append(ip)
 
@@ -2781,13 +3400,13 @@ class LocustGUI(ctk.CTk):
                     f"🗑 Removing {len(ip_list)} {ver.upper()} addresses (/{pfx})..."
                 )
                 remove_pool(
-                    ip_start=ip_list[0],
-                    ip_end=ip_list[-1],
-                    interface=interface,
-                    pool_file=pool_file,
-                    ip_version=ver,
-                    ip_list=ip_list,
-                    prefix_len=pfx,
+                    ip_start   = ip_list[0],
+                    ip_end     = ip_list[-1],
+                    interface  = interface,
+                    pool_file  = pool_file,
+                    ip_version = ver,
+                    ip_list    = ip_list,
+                    prefix_len = pfx,
                 )
                 total_removed += len(ip_list)
                 self.write_log(f"  ✓ {ver.upper()} /{pfx} — done")
@@ -2801,3 +3420,4 @@ class LocustGUI(ctk.CTk):
 if __name__ == "__main__":
     app = LocustGUI()
     app.mainloop()
+
