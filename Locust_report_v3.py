@@ -1523,44 +1523,71 @@ def create_pdf_report(stats_file, history_file, output_file,
 
     if source_ports_display.lower() in ("nan", "none", "null", ""):
         source_ports_display = _get_os_port_range()
-    story.append(make_info_table([
-        [Paragraph("Test Type",         S["label"]), Paragraph(display_test_type,              S["value"])],
-        [Paragraph("HTTP Method",       S["label"]), Paragraph(str(http_method),               S["value"])],
-        [Paragraph("Protocol",          S["label"]), Paragraph(test_type_meta,                 S["value"])],
-        [Paragraph("Target Host",       S["label"]), Paragraph(str(target_host),               S["value"])],
-        [Paragraph("Endpoint(s)",       S["label"]), Paragraph(str(endpoint_path), S["value"])],
-        [Paragraph("Target IP",         S["label"]), Paragraph(str(resolved_target_ip),        S["value"])],
-        [Paragraph("IP Version",        S["label"]), Paragraph(ip_version,                     S["value"])],
-        [Paragraph("Start Time",        S["label"]), Paragraph(str(start_time),                S["value"])],
-        [Paragraph("End Time",          S["label"]), Paragraph(str(end_time),                  S["value"])],
-        [Paragraph("Duration",          S["label"]), Paragraph(duration,                       S["value"])],
-        [Paragraph("Used IP range",     S["label"]), Paragraph(str(used_ips),                  S["value"])],
-        [Paragraph("IP Pool range",     S["label"]), Paragraph(str(ip_pool_range) if ip_pool_range else str(used_ips), S["value"])],
-        [Paragraph("IP Pool count",     S["label"]), Paragraph(str(ip_pool_count) if ip_pool_count else "Unknown", S["value"])],
-        [Paragraph("Source ports",      S["label"]), Paragraph(source_ports_display, S["value"])],
-        [Paragraph("Reachability source IP", S["label"]), Paragraph(str(reach_src_ip) if reach_src_ip else "Unknown", S["value"])],
-        [Paragraph("Reachability interface", S["label"]), Paragraph(str(reach_interface), S["value"])],
-        [Paragraph("Reachability interval",  S["label"]), Paragraph(_fmt_seconds(reach_interval), S["value"])],
-        [Paragraph("Reachability timeout",   S["label"]), Paragraph(_fmt_seconds(reach_timeout), S["value"])],
-        [Paragraph("Stop timeout",      S["label"]), Paragraph(_fmt_seconds(stop_timeout), S["value"])],
-        [Paragraph("Connect timeout",   S["label"]), Paragraph(_fmt_seconds(connect_timeout), S["value"])],
-        [Paragraph("Read timeout",      S["label"]), Paragraph(_fmt_seconds(read_timeout), S["value"])],
-        [Paragraph("Processes",         S["label"]), Paragraph(str(processes), S["value"])],
-        [Paragraph("Request failure threshold",      S["label"]), Paragraph(f"{request_threshold*100:.1f}%", S["value"])],
-        [Paragraph("Reachability failure threshold", S["label"]), Paragraph(f"{reach_threshold * 100:.1f}%", S["value"])],
-        [Paragraph("Report generated",  S["label"]),
-         Paragraph(datetime.now().strftime('%d-%m-%Y  %H:%M:%S'),                            S["value"])],
-    ], col_widths=[160, None]))
-    story.append(Spacer(1, 14))
 
+    if test_type_meta not in ("TCP", "UDP"):
+        story.append(make_info_table([
+            [Paragraph("Test Type",         S["label"]), Paragraph(display_test_type,              S["value"])],
+            [Paragraph("HTTP Method",       S["label"]), Paragraph(str(http_method),               S["value"])],
+            [Paragraph("Protocol",          S["label"]), Paragraph(test_type_meta,                 S["value"])],
+            [Paragraph("Target Host",       S["label"]), Paragraph(str(target_host),               S["value"])],
+            [Paragraph("Endpoint(s)",       S["label"]), Paragraph(str(endpoint_path), S["value"])],
+            [Paragraph("Target IP",         S["label"]), Paragraph(str(resolved_target_ip),        S["value"])],
+            [Paragraph("IP Version",        S["label"]), Paragraph(ip_version,                     S["value"])],
+            [Paragraph("Start Time",        S["label"]), Paragraph(str(start_time),                S["value"])],
+            [Paragraph("End Time",          S["label"]), Paragraph(str(end_time),                  S["value"])],
+            [Paragraph("Duration",          S["label"]), Paragraph(duration,                       S["value"])],
+            [Paragraph("Used IP range",     S["label"]), Paragraph(str(used_ips),                  S["value"])],
+            [Paragraph("IP Pool range",     S["label"]), Paragraph(str(ip_pool_range) if ip_pool_range else str(used_ips), S["value"])],
+            [Paragraph("IP Pool count",     S["label"]), Paragraph(str(ip_pool_count) if ip_pool_count else "Unknown", S["value"])],
+            [Paragraph("Source ports",      S["label"]), Paragraph(source_ports_display, S["value"])],
+            [Paragraph("Reachability source IP", S["label"]), Paragraph(str(reach_src_ip) if reach_src_ip else "Unknown", S["value"])],
+            [Paragraph("Reachability interface", S["label"]), Paragraph(str(reach_interface), S["value"])],
+            [Paragraph("Reachability interval",  S["label"]), Paragraph(_fmt_seconds(reach_interval), S["value"])],
+            [Paragraph("Reachability timeout",   S["label"]), Paragraph(_fmt_seconds(reach_timeout), S["value"])],
+            [Paragraph("Stop timeout",      S["label"]), Paragraph(_fmt_seconds(stop_timeout), S["value"])],
+            [Paragraph("Connect timeout",   S["label"]), Paragraph(_fmt_seconds(connect_timeout), S["value"])],
+            [Paragraph("Read timeout",      S["label"]), Paragraph(_fmt_seconds(read_timeout), S["value"])],
+            [Paragraph("Processes",         S["label"]), Paragraph(str(processes), S["value"])],
+            [Paragraph("Request failure threshold",      S["label"]), Paragraph(f"{request_threshold*100:.1f}%", S["value"])],
+            [Paragraph("Reachability failure threshold", S["label"]), Paragraph(f"{reach_threshold * 100:.1f}%", S["value"])],
+            [Paragraph("Report generated",  S["label"]),
+             Paragraph(datetime.now().strftime('%d-%m-%Y  %H:%M:%S'),                            S["value"])],
+        ], col_widths=[160, None]))
+        story.append(Spacer(1, 14))
+    else:
+        story.append(make_info_table([
+            [Paragraph("Test Type",         S["label"]), Paragraph(display_test_type,              S["value"])],
+            [Paragraph("Protocol",          S["label"]), Paragraph(test_type_meta,                 S["value"])],
+            [Paragraph("Target Host",       S["label"]), Paragraph(str(target_host),               S["value"])],
+            [Paragraph("Target IP",         S["label"]), Paragraph(str(resolved_target_ip),        S["value"])],
+            [Paragraph("IP Version",        S["label"]), Paragraph(ip_version,                     S["value"])],
+            [Paragraph("Start Time",        S["label"]), Paragraph(str(start_time),                S["value"])],
+            [Paragraph("End Time",          S["label"]), Paragraph(str(end_time),                  S["value"])],
+            [Paragraph("Duration",          S["label"]), Paragraph(duration,                       S["value"])],
+            [Paragraph("Used IP range",     S["label"]), Paragraph(str(used_ips),                  S["value"])],
+            [Paragraph("IP Pool range",     S["label"]), Paragraph(str(ip_pool_range) if ip_pool_range else str(used_ips), S["value"])],
+            [Paragraph("IP Pool count",     S["label"]), Paragraph(str(ip_pool_count) if ip_pool_count else "Unknown", S["value"])],
+            [Paragraph("Source ports",      S["label"]), Paragraph(source_ports_display, S["value"])],
+            [Paragraph("Reachability source IP", S["label"]), Paragraph(str(reach_src_ip) if reach_src_ip else "Unknown", S["value"])],
+            [Paragraph("Reachability interface", S["label"]), Paragraph(str(reach_interface), S["value"])],
+            [Paragraph("Reachability interval",  S["label"]), Paragraph(_fmt_seconds(reach_interval), S["value"])],
+            [Paragraph("Reachability timeout",   S["label"]), Paragraph(_fmt_seconds(reach_timeout), S["value"])],
+            [Paragraph("Stop timeout",      S["label"]), Paragraph(_fmt_seconds(stop_timeout), S["value"])],
+            [Paragraph("Connect timeout",   S["label"]), Paragraph(_fmt_seconds(connect_timeout), S["value"])],
+            [Paragraph("Read timeout",      S["label"]), Paragraph(_fmt_seconds(read_timeout), S["value"])],
+            [Paragraph("Processes",         S["label"]), Paragraph(str(processes), S["value"])],
+            [Paragraph("Request failure threshold",      S["label"]), Paragraph(f"{request_threshold*100:.1f}%", S["value"])],
+            [Paragraph("Reachability failure threshold", S["label"]), Paragraph(f"{reach_threshold * 100:.1f}%", S["value"])],
+            [Paragraph("Report generated",  S["label"]),
+             Paragraph(datetime.now().strftime('%d-%m-%Y  %H:%M:%S'),                            S["value"])],
+        ], col_widths=[160, None]))
+        story.append(Spacer(1, 14))
     # ── Comment ─────────────────────────────────────────────────
     if comment and comment.strip():
         story.append(ColorBand("  Comment", bg=colors.HexColor("#5F6368")))
         story.append(Spacer(1, 8))
         story.append(Paragraph(comment.replace("\n", "<br/>"), S["comment"]))
         story.append(Spacer(1, 14))
-
-    story.append(PageBreak())
 
     # ── PERFORMANCE OVERVIEW ──────────────────────────────────────
     story.append(ColorBand("  Performance Overview"))
@@ -1590,10 +1617,8 @@ def create_pdf_report(stats_file, history_file, output_file,
         [Paragraph("Avg Content Size",      S["label"]), Paragraph(f"{avg_size} B",     S["value"])],
     ], col_widths=[200, None]))
     story.append(Spacer(1, 14))
-    story.append(PageBreak())
     add_stages_table(story, S, BASE_DIR)
     story.append(PageBreak())
-
     # ── Failures OVERVIEW ──────────────────────────────────────
     if include_failures and os.path.exists(FAILURES_FILE):
         fdf = pd.read_csv(FAILURES_FILE)
@@ -1646,7 +1671,6 @@ def create_pdf_report(stats_file, history_file, output_file,
 
             story.append(t)
             story.append(Spacer(1, 14))
-            story.append(PageBreak())
 
     # ── TOPOLOGY ─────────────────────────────────────────────────
     if os.path.exists(topology_output):
@@ -1660,7 +1684,6 @@ def create_pdf_report(stats_file, history_file, output_file,
             S["muted"]
         ))
         story.append(Spacer(1, 16))
-        story.append(PageBreak())
 
     # ── REACHABILITY  (pie chart + timeline) ──────────────────────
     if test_type_meta not in ("TCP", "UDP"):
