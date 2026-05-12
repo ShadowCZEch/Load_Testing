@@ -2487,6 +2487,7 @@ class LocustGUI(ctk.CTk):
                 start_time = datetime.now()
                 test_main.run(**params)
                 end_time = datetime.now()
+
                 self._test_meta = {
                     "start_time": start_time.strftime("%d-%m-%Y %H:%M:%S"),
                     "end_time": end_time.strftime("%d-%m-%Y %H:%M:%S"),
@@ -2494,13 +2495,23 @@ class LocustGUI(ctk.CTk):
                     "target_host": params["host_ip"],
                 }
 
+                ip_pool_file = params.get("ip_pool_file", "")
+                try:
+                    with open(ip_pool_file) as f:
+                        ip_pool = [line.strip() for line in f if line.strip()]
+                except Exception:
+                    ip_pool = []
+
                 meta_df = pd.DataFrame([{
                     "start_time": start_time.strftime("%d-%m-%Y %H:%M:%S"),
                     "end_time": end_time.strftime("%d-%m-%Y %H:%M:%S"),
+                    "duration": (end_time - start_time).total_seconds(),
                     "test_type": self._active_page,
                     "target_host": params["host_ip"],
                     "target_ip": params["host_ip"],
-                    "used_ips": "Unknown",
+                    "used_ips": ", ".join(ip_pool),
+                    "ip_pool_count": len(ip_pool),
+                    "packet_size": int(params.get("packet_size", 0)),
                 }])
                 meta_df.to_csv(os.path.join(DATA_DIR, "report_metadata.csv"), index=False)
                 self.write_log("-" * 60)
