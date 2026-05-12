@@ -581,6 +581,8 @@ class LocustGUI(ctk.CTk):
         self._pages          = {}
         self._zoom           = 1.0
 
+        self._page_state = {}
+        self._page_frames = {}
         self._stages      = []
         self._stage_rows  = []
         self._preset_btns = {}
@@ -669,6 +671,8 @@ class LocustGUI(ctk.CTk):
         for tab_key in self._pages:
             self._active_page = tab_key
             q = self._pages[tab_key]
+            if not isinstance(q, dict) or "preset_btn_widgets" not in q:
+                continue
             if stages_raw:
                 try:
                     q["stages"] = json.loads(stages_raw)
@@ -906,12 +910,15 @@ class LocustGUI(ctk.CTk):
         self.page_container.grid_columnconfigure(0, weight=1)
         self.page_container.grid_rowconfigure(0, weight=1)
 
-        self._pages["Config"] = self._build_page_config(self.page_container)
-        self._pages["HTTP/S"] = self._build_page_http(self.page_container)
-        self._pages["TCP"] = self._build_page_tcp(self.page_container)
-        self._pages["UDP"] = self._build_page_udp(self.page_container)
-        self._pages["Generate Report"] = self._build_page_report(self.page_container)
-        self._pages["Reports"] = self._build_page_reports(self.page_container)
+        self._page_frames["Config"] = self._build_page_config(self.page_container)
+        self._page_frames["HTTP/S"] = self._build_page_http(self.page_container)
+        self._page_frames["TCP"] = self._build_page_tcp(self.page_container)
+        self._page_frames["UDP"] = self._build_page_udp(self.page_container)
+        self._page_frames["Generate Report"] = self._build_page_report(self.page_container)
+        self._page_frames["Reports"] = self._build_page_reports(self.page_container)
+        self._pages["Config"] = {}
+        self._pages["Generate Report"] = {}
+        self._pages["Reports"] = {}
         self.after(100, self._set_sash_default) # type: ignore
 
     def _show_page(self, name):
@@ -922,7 +929,7 @@ class LocustGUI(ctk.CTk):
             else:
                 btn.configure(fg_color="transparent", text_color=C_TEXT,
                                font=ctk.CTkFont(size=13, weight="normal"))
-        for label, frame in self._pages.items():
+        for label, frame in self._page_frames.items():
             if label == name:
                 frame.grid()
             else:
@@ -1307,73 +1314,56 @@ class LocustGUI(ctk.CTk):
         self._field_row(card, 1, "Read timeout (s)", "read_timeout", "15", col=2,
                         help="Maximum time (seconds) to wait for a server response.\nIncrease for endpoints with slow processing times.")
 
-        # ── Request Settings ───────────────────────────────────────
+        # ── Request Settings card ──────────────────────────────────
         s_row = self._card_header(scroll, "Request Settings", s_row)
-        card_lf = self._card(scroll, s_row)
+        card_req = self._card(scroll, s_row)
         s_row += 1
 
         ctk.CTkLabel(
-            card_lf,
-            text="HTTP method",
-            font=ctk.CTkFont(size=15),
-            text_color=C_TEXT,
-            anchor="w",
-            width=self.LBL_W
+            card_req, text="HTTP method", font=ctk.CTkFont(size=15),
+            text_color=C_TEXT, anchor="w", width=self.LBL_W
         ).grid(row=0, column=0, padx=(16, 8), pady=10, sticky="w")
 
         self._http_method_combo = ctk.CTkComboBox(
-            card_lf,
-            values=["GET", "POST"],
-            width=self.ENTR_W,
-            fg_color=C_ENTRY,
-            button_color=C_ACTIVE,
-            button_hover_color=C_HOVER,
-            dropdown_fg_color=C_CARD,
-            dropdown_text_color=C_TEXT,
+            card_req, values=["GET", "POST"], width=self.ENTR_W,
+            fg_color=C_ENTRY, button_color=C_ACTIVE, button_hover_color=C_HOVER,
+            dropdown_fg_color=C_CARD, dropdown_text_color=C_TEXT,
             command=self._on_http_method_change
         )
         self._http_method_combo.set(os.getenv("HTTP_METHOD", "GET"))
         self._http_method_combo.grid(row=0, column=1, padx=(0, 16), pady=10, sticky="ew")
-
         self.entries["http_method"] = self._http_method_combo
-        self._request_body_frame = ctk.CTkFrame(card_lf, fg_color="transparent")
+
+        self._request_body_frame = ctk.CTkFrame(card_req, fg_color="transparent")
         self._request_body_frame.grid(row=1, column=0, columnspan=4, sticky="ew")
         self._request_body_frame.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(
-            self._request_body_frame,
-            text="Request body JSON",
-            font=ctk.CTkFont(size=15),
-            text_color=C_TEXT,
-            anchor="w",
-            width=self.LBL_W
+            self._request_body_frame, text="Request body JSON",
+            font=ctk.CTkFont(size=15), text_color=C_TEXT, anchor="w", width=self.LBL_W
         ).grid(row=0, column=0, padx=(16, 8), pady=10, sticky="nw")
 
         self.request_body_text = ctk.CTkTextbox(
-            self._request_body_frame,
-            height=90,
-            corner_radius=8,
+            self._request_body_frame, height=90, corner_radius=8,
             font=ctk.CTkFont(size=12, family="Courier New"),
-            fg_color=C_ENTRY,
-            text_color=C_TEXT
+            fg_color=C_ENTRY, text_color=C_TEXT
         )
-        self.request_body_text.grid(
-            row=0,
-            column=1,
-            columnspan=3,
-            padx=(0, 16),
-            pady=10,
-            sticky="ew"
-        )
+        self.request_body_text.grid(row=0, column=1, columnspan=3, padx=(0, 16), pady=10, sticky="ew")
+
+        # ── Locustfile card ────────────────────────────────────────
+        s_row = self._card_header(scroll, "Locust File", s_row)
+        card_lf = self._card(scroll, s_row)
+        s_row += 1
 
         ctk.CTkLabel(
-            card_lf,
-            text="HTTP method",
-            font=ctk.CTkFont(size=15),
-            text_color=C_TEXT,
-            anchor="w",
-            width=self.LBL_W
+            card_lf, text="Locust file", font=ctk.CTkFont(size=15),
+            text_color=C_TEXT, anchor="w", width=self.LBL_W
         ).grid(row=0, column=0, padx=(16, 8), pady=10, sticky="w")
+
+        p["locustfile_label"] = ctk.CTkLabel(
+            card_lf, text="", font=ctk.CTkFont(size=12),
+            text_color=C_TEXT, anchor="w",
+        )
         p["locustfile_label"].grid(row=0, column=1, padx=(0, 8), pady=10, sticky="ew")
         ctk.CTkButton(card_lf, text="Browse", width=80,
                       fg_color=C_ENTRY, hover_color=C_HOVER,
