@@ -1524,12 +1524,14 @@ def create_pdf_report(stats_file, history_file, output_file,
     if source_ports_display.lower() in ("nan", "none", "null", ""):
         source_ports_display = _get_os_port_range()
 
+    show_host = str(target_host).strip() != str(resolved_target_ip).strip()
+
     if test_type_meta not in ("TCP", "UDP"):
         story.append(make_info_table([
             [Paragraph("Test Type",         S["label"]), Paragraph(display_test_type,              S["value"])],
             [Paragraph("HTTP Method",       S["label"]), Paragraph(str(http_method),               S["value"])],
             [Paragraph("Protocol",          S["label"]), Paragraph(test_type_meta,                 S["value"])],
-            [Paragraph("Target Host",       S["label"]), Paragraph(str(target_host),               S["value"])],
+            *([[Paragraph("Target Host", S["label"]), Paragraph(str(target_host), S["value"])]] if show_host else []),
             [Paragraph("Endpoint(s)",       S["label"]), Paragraph(str(endpoint_path), S["value"])],
             [Paragraph("Target IP",         S["label"]), Paragraph(str(resolved_target_ip),        S["value"])],
             [Paragraph("IP Version",        S["label"]), Paragraph(ip_version,                     S["value"])],
@@ -1558,7 +1560,7 @@ def create_pdf_report(stats_file, history_file, output_file,
         story.append(make_info_table([
             [Paragraph("Test Type",         S["label"]), Paragraph(display_test_type,              S["value"])],
             [Paragraph("Protocol",          S["label"]), Paragraph(test_type_meta,                 S["value"])],
-            [Paragraph("Target Host",       S["label"]), Paragraph(str(target_host),               S["value"])],
+            *([[Paragraph("Target Host", S["label"]), Paragraph(str(target_host), S["value"])]] if show_host else []),
             [Paragraph("Target IP",         S["label"]), Paragraph(str(resolved_target_ip),        S["value"])],
             [Paragraph("IP Version",        S["label"]), Paragraph(ip_version,                     S["value"])],
             [Paragraph("Start Time",        S["label"]), Paragraph(str(start_time),                S["value"])],
