@@ -11,12 +11,14 @@ IP_BASE = 20
 UDP_HDR = 8
 TCP_BASE = 20
 
-if PACKET_SIZE < IP_BASE + UDP_HDR:
-    print(f"Zadána menší než standartní velikost paketu. Bude použita standartní velikost. \n "
-          f" Pro větší velikost  musí být packet_size alespoň >= {IP_BASE + UDP_HDR}")
+PROTOCOL = os.environ.get("LOCUST_MODE", "").lower()
 
-if PACKET_SIZE < IP_BASE + TCP_BASE:
-    print(f"target_ip_len musí být >= {IP_BASE + TCP_BASE} (IP + TCP hlavička)")
+if os.environ.get("LOCUST_WORKER_ID") is None:
+    if PROTOCOL == "udp" and PACKET_SIZE < IP_BASE + UDP_HDR:
+        print(f"Zadána menší než standartní velikost paketu. Bude použita standartní velikost.\n"
+              f"  Pro větší velikost musí být packet_size alespoň >= {IP_BASE + UDP_HDR}")
+    elif PROTOCOL == "tcp" and PACKET_SIZE < IP_BASE + TCP_BASE:
+        print(f"target_ip_len musí být >= {IP_BASE + TCP_BASE} (IP + TCP hlavička)")
 
 def udp_packet(dst_port,src_ip=None):
 
