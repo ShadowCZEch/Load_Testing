@@ -7,17 +7,20 @@ import os
 TARGET_HOST = os.environ.get("TARGET_HOST")
 PACKET_SIZE = int(os.environ.get("PACKET_SIZE", 60))
 
+IP_BASE = 20
+UDP_HDR = 8
+TCP_BASE = 20
+
+if PACKET_SIZE < IP_BASE + UDP_HDR:
+    print(f"Zadána menší než standartní velikost paketu. Bude použita standartní velikost. \n "
+          f" Pro větší velikost  musí být packet_size alespoň >= {IP_BASE + UDP_HDR}")
+
+if PACKET_SIZE < IP_BASE + TCP_BASE:
+    print(f"target_ip_len musí být >= {IP_BASE + TCP_BASE} (IP + TCP hlavička)")
+
 def udp_packet(dst_port,src_ip=None):
 
-    IP_BASE = 20
-    UDP_HDR = 8
-
     sport = random.randint(1,65535)
-
-    if PACKET_SIZE < IP_BASE + UDP_HDR:
-        print(f"Zadána menší než standartní velikost paketu. Bude použita standartní velikost. \n "
-                         f" Pro větší velikost  musí být packet_size alespoň >= {IP_BASE + UDP_HDR}")
-
 
     payload_len = PACKET_SIZE - (IP_BASE + UDP_HDR)
     if payload_len > 0:
@@ -32,8 +35,6 @@ def udp_packet(dst_port,src_ip=None):
     send(pkt,verbose=False)
 
 def tcp_packet(dst_port, src_ip=None):
-    IP_BASE = 20
-    TCP_BASE = 20
     sport = random.randint(1,65535)
 
     min_total = IP_BASE + TCP_BASE
