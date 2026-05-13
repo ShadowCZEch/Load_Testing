@@ -547,20 +547,20 @@ def add_time_series_charts(history_df, story, request_failure_threshold=None):
         p3 = os.path.join(REPORT_DIR, "chart_users.png")
         fig, ax = plt.subplots(figsize=(7, 3))
 
-        ax.fill_between(
-            history_df['Timestamp'],
-            history_df['User Count'],
-            alpha=0.15,
-            color="#7B2FBE"
-        )
+        user_count = pd.to_numeric(history_df['User Count'], errors='coerce').fillna(0)
 
-        ax.plot(
-            history_df['Timestamp'],
-            history_df['User Count'],
-            color="#7B2FBE",
-            linewidth=1.8,
-            label="Users"
-        )
+        if user_count.max() < 1:
+            user_count = user_count * 100
+
+        ax.fill_between(history_df['Timestamp'],
+                        user_count,
+                        alpha=0.15,
+                        color="#7B2FBE")
+        ax.plot(history_df['Timestamp'],
+                user_count,
+                color="#7B2FBE",
+                linewidth=1.8,
+                label="Users")
 
         ax.set_ylabel("Number of Users")
         ax.yaxis.set_major_locator(ticker.MaxNLocator(integer=True))
