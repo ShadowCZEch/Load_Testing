@@ -2303,7 +2303,11 @@ class LocustGUI(ctk.CTk):
                           ).grid(row=0, column=1)
 
     def _open_report(self, path):
-        self._open_file(path)
+        if os.geteuid() != 0:
+            self._open_file(path)
+        else:
+            self.write_log(f"⚠ Running as root — please open the report manually:")
+            self.write_log(f"   {path}")
 
     def _delete_report(self, path, name):
         try:
@@ -2508,6 +2512,11 @@ class LocustGUI(ctk.CTk):
     def _open_file(self, path):
         try:
             if sys.platform.startswith("linux"):
+                display = os.environ.get("DISPLAY", "").strip()
+                wayland = os.environ.get("WAYLAND_DISPLAY", "").strip()
+                if not display and not wayland:
+                    self.write_log("⚠ No display available — open the file manually.")
+                    return
                 subprocess.Popen(["xdg-open", path])
             elif sys.platform == "darwin":
                 subprocess.Popen(["open", path])
@@ -3300,7 +3309,11 @@ class LocustGUI(ctk.CTk):
             )
             self.write_log(f"✓ {report_name} generated → {save_dir}")
             self.write_log("=" * 60)
-            self._open_file(pdf_path)
+            if os.geteuid() != 0:
+                self._open_file(pdf_path)
+            else:
+                self.write_log(f"⚠ Running as root — please open the report manually:")
+                self.write_log(f"   {pdf_path}")
         except Exception as e:
             self.write_log(f"✗ Report error: {e}")
 
