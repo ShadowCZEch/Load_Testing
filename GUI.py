@@ -887,6 +887,48 @@ class LocustGUI(ctk.CTk):
     # MAIN CONTENT AREA
     # ================================================================
 
+    def _validate_fields(self):
+        pfx = self._active_page.lower()
+
+        # Process fields (-1 or positive)
+        for key in ["processes", f"{pfx}_processes"]:
+            entry = self.entries.get(key)
+            if not entry:
+                continue
+            val = entry.get().strip()
+            try:
+                num = int(val)
+                if num < -1 or num == 0:
+                    self.write_log(f"✗ Invalid process count '{val}' — must be -1 (auto) or a positive number.")
+                    return False
+            except ValueError:
+                self.write_log(f"✗ Invalid process count '{val}' — must be a number.")
+                return False
+
+        # Positive-only fields
+        positive_fields = {
+            f"{pfx}_users": "Users",
+            f"{pfx}_spawn_rate": "Spawn rate",
+            f"{pfx}_run_time": "Duration",
+            f"{pfx}_packet_size": "Packet size",
+            f"{pfx}_stop_timeout": "Stop timeout",
+        }
+        for key, label in positive_fields.items():
+            entry = self.entries.get(key)
+            if not entry:
+                continue
+            val = entry.get().strip()
+            try:
+                num = float(val)
+                if num <= 0:
+                    self.write_log(f"✗ Invalid {label} '{val}' — must be greater than 0.")
+                    return False
+            except ValueError:
+                self.write_log(f"✗ Invalid {label} '{val}' — must be a number.")
+                return False
+
+        return True
+
     def _build_main(self):
         self.main = ctk.CTkFrame(self._paned, corner_radius=0, fg_color=C_CONTENT)
         self._paned.add(self.main,      minsize=300, stretch="always")
@@ -1313,7 +1355,7 @@ class LocustGUI(ctk.CTk):
                         help="Maximum time (seconds) to establish a TCP connection.\nIncrease for slow or distant servers.")
         self._field_row(card, 1, "Read timeout (s)", "read_timeout", "15", col=2,
                         help="Maximum time (seconds) to wait for a server response.\nIncrease for endpoints with slow processing times.")
-
+        self._setup_process_field_highlight("processes")
         # ── Request Settings card ──────────────────────────────────
         s_row = self._card_header(scroll, "Request Settings", s_row)
         card_req = self._card(scroll, s_row)
@@ -1434,6 +1476,10 @@ class LocustGUI(ctk.CTk):
                         help="Total test duration in seconds.")
         self._field_row(card_test, 1, "Packet size (bytes)", "tcp_packet_size", "60", col=2,
                         help="Total packet size in bytes including IP and transport headers.\nMinimum: 40 for TCP.")
+        self._setup_positive_field_highlight("tcp_users")
+        self._setup_positive_field_highlight("tcp_spawn_rate")
+        self._setup_positive_field_highlight("tcp_run_time")
+        self._setup_positive_field_highlight("tcp_packet_size")
         # ── Locust Parameters ─────────────────────────────────────
         s_row = self._card_header(scroll, "Locust Parameters", s_row)
         card = self._card(scroll, s_row)
@@ -1441,6 +1487,8 @@ class LocustGUI(ctk.CTk):
 
         self._field_row(card, 0, "Stop timeout (s)", "tcp_stop_timeout", "60", col=0, help="...")
         self._field_row(card, 0, "Processes", "tcp_processes", "-1", col=2, help="...")
+        self._setup_process_field_highlight("tcp_processes")
+        self._setup_positive_field_highlight("tcp_stop_timeout")
 
         # ── Locustfile ────────────────────────────────────────────
         s_row = self._card_header(scroll, "Locustfile", s_row)
@@ -1546,6 +1594,10 @@ class LocustGUI(ctk.CTk):
         self._field_row(card_test, 1, "Packet size (bytes)", "udp_packet_size", "60", col=2,
                         help="Total size in bytes incl. headers.\nMin: 28 for UDP.")
 
+        self._setup_positive_field_highlight("udp_users")
+        self._setup_positive_field_highlight("udp_spawn_rate")
+        self._setup_positive_field_highlight("udp_run_time")
+        self._setup_positive_field_highlight("udp_packet_size")
         # ── Locust Parameters ─────────────────────────────────────
         s_row = self._card_header(scroll, "Locust Parameters", s_row)
         card = self._card(scroll, s_row)
@@ -1555,7 +1607,8 @@ class LocustGUI(ctk.CTk):
                         help="Time Locust waits for users to finish after test ends.")
         self._field_row(card, 0, "Processes", "udp_processes", "-1", col=2,
                         help="Number of worker processes.\n-1 = one per CPU core.")
-
+        self._setup_process_field_highlight("udp_processes")
+        self._setup_positive_field_highlight("udp_stop_timeout")
         # ── Locustfile ────────────────────────────────────────────
         s_row = self._card_header(scroll, "Locustfile", s_row)
         card_lf = self._card(scroll, s_row)
@@ -2365,6 +2418,56 @@ class LocustGUI(ctk.CTk):
         self.entries[key] = e
         self._labels[key] = lbl
 
+    def _setup_process_field_highlight(self, key):
+        entry = self.entries.get(key)
+        if not entry:
+            return
+
+        def on_change(*args):
+            val = entry.get().strip()
+            try:
+                num = int(val)
+                if num < -1 or num == 0:
+                    entry.configure(fg_color="#4a1a1a")
+                else:
+                    entry.configure(fg_color=C_ENTRY)
+            except ValueError:
+                entry.configure(fg_color="#4a1a1a")
+
+
+        var = ctk.StringVar()
+        current_value = entry.get()
+        entry.configure(textvariable=var)
+        var.set(current_value)
+        var.trace_add("write", on_change)
+        self._process_vars = getattr(self, "_process_vars", {})
+        self._process_vars[key] = var
+        entry.after(100, on_change)
+
+    def _setup_positive_field_highlight(self, key):
+        entry = self.entries.get(key)
+        if not entry:
+            return
+
+        def on_change(*args):
+            val = entry.get().strip()
+            try:
+                num = float(val)
+                if num <= 0:
+                    entry.configure(fg_color="#4a1a1a")
+                else:
+                    entry.configure(fg_color=C_ENTRY)
+            except ValueError:
+                entry.configure(fg_color="#4a1a1a")
+
+        var = ctk.StringVar()
+        current_value = entry.get()
+        entry.configure(textvariable=var)
+        var.set(current_value)
+        var.trace_add("write", on_change)
+        self._process_vars = getattr(self, "_process_vars", {})
+        self._process_vars[key] = var
+
     def _combo_row(self, card, row, label, key, values, default, col=0, help: str = None):
         lbl = ctk.CTkLabel(
             card,
@@ -2999,6 +3102,9 @@ class LocustGUI(ctk.CTk):
             )
 
     def _run_test_thread(self):
+        if not self._validate_fields():
+            self._set_stop_enabled(False)
+            return
         # ================================================================
         # TCP/UDP
         # ================================================================
