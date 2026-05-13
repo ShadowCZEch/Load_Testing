@@ -1626,14 +1626,18 @@ class LocustGUI(ctk.CTk):
             range_start = "1"
             range_end = "65535"
 
-        worker_count = self.entries[f"{pfx}_processes"].get().strip()
+        worker_count = self.entries[f"{pfx}_users"].get().strip()
         if worker_count == "-1":
             worker_count = str(multiprocessing.cpu_count())
+
+        process_count = self.entries[f"{pfx}_processes"].get().strip()
+        if process_count == "-1":
+            process_count = str(multiprocessing.cpu_count())
 
         return {
             "host_ip": self.entries["target"].get().strip(),
             "protocol": pfx,
-            "worker_count": self.entries[f"{pfx}_processes"].get().strip(),
+            "worker_count": process_count,
             "users": worker_count,
             "spawn_rate": self.entries[f"{pfx}_spawn_rate"].get().strip(),
             "run_time": self.entries[f"{pfx}_run_time"].get().strip(),
@@ -2595,6 +2599,14 @@ class LocustGUI(ctk.CTk):
         target_clean = self._get_target_clean()
         ip_ver       = self._active_ip_version()
 
+        pfx = self._active_page.lower()
+        try:
+            processes = self.entries[f"{pfx}_processes"].get().strip()
+        except KeyError:
+            processes = self.get("processes") or "-1"
+        if processes == "-1":
+            processes = str(multiprocessing.cpu_count())
+
         # Correct host extraction for IPv4, IPv6 and hostnames.
         # Examples:
         #   http://192.168.100.73:8080        -> 192.168.100.73
@@ -2673,7 +2685,7 @@ class LocustGUI(ctk.CTk):
                 "reach_threshold":  self.get("reach_threshold") or "5",
                 "http_method":      self.get("http_method") or "GET",
                 "endpoint_path":    normalize_endpoint_paths(self.get("endpoint_path") or "/"),
-                "processes":        self.get("processes"),
+                "processes":        processes,
                 "stop_timeout":     self.get("stop_timeout") or "60",
                 "connect_timeout":  self.get("connect_timeout") or "5",
                 "read_timeout":     self.get("read_timeout") or "15",
@@ -3013,6 +3025,7 @@ class LocustGUI(ctk.CTk):
                 reach_thread.start()
                 print(f"DEBUG reach_thread started, active_page={self._active_page}")
 
+                self._save_test_config(BASE_DIR)
                 start_time = datetime.now()
                 test_main.run(**params)
                 end_time = datetime.now()
