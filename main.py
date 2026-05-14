@@ -21,6 +21,33 @@ def resolve_host(host_input):
     except socket.gaierror:
         raise ValueError(f"Could not resolve host: {host_input}")
 
+def scan(
+    host_ip=None,
+    protocol=None,
+    range_start=None,
+    range_end=None,
+):
+    cfg = Config_Load()
+    host_ip = resolve_host(host_ip or cfg.get("ipaddr"))
+    protocol = (protocol or cfg.get("protocol", "")).lower()
+
+    if protocol == "tcp":
+        print("Starting TCP scan...")
+        return scan_ports_tcp(
+            range_start=range_start or cfg.get("tcp_range_start"),
+            range_end=range_end or cfg.get("tcp_range_end"),
+            host_ip=host_ip,
+            version=6 if ":" in host_ip else 4
+        )
+    else:
+        print("Starting UDP scan...")
+        return scan_ports_udp(
+            range_start=range_start or cfg.get("udp_range_start"),
+            range_end=range_end or cfg.get("udp_range_end"),
+            host_ip=host_ip,
+            version=6 if ":" in host_ip else 4
+        )
+
 def run(
     host_ip=None,
     protocol=None,
@@ -32,10 +59,10 @@ def run(
     range_start=None,
     range_end=None,
     ip_pool_file=None,
+    port=None,
+    on_master_start=None,
+    csv_prefix=None,
 ):
-
-
-
     cfg = Config_Load()
     host_ip = resolve_host(host_ip or cfg.get("ipaddr"))
     protocol = (protocol or cfg.get("protocol", "")).lower()
@@ -45,6 +72,7 @@ def run(
     run_time = run_time or cfg.get("time_total")
 
 
+
     pool_file = ip_pool_file or os.path.join(os.getcwd(), "ip_pool.txt")
     if not os.path.isfile(pool_file):
         raise FileNotFoundError(
@@ -52,22 +80,9 @@ def run(
             "Generate it first using the IP Pool section in the GUI."
         )
 
-    if protocol == "tcp":
-        print("Starting TCP scan...")
-        port = scan_ports_tcp(
-            range_start=range_start or cfg.get("tcp_range_start"),
-            range_end=range_end or cfg.get("tcp_range_end"),
-            host_ip=host_ip,
-            version=6 if ":" in host_ip else 4
-        )
-    else:
-        print("Starting UDP scan...")
-        port = scan_ports_udp(
-                range_start=range_start or cfg.get("udp_range_start"),
-                range_end=range_end or cfg.get("udp_range_end"),
-                host_ip=host_ip,
-                version=6 if ":" in host_ip else 4
-        )
+    if port is None:
+        port = scan(host_ip=host_ip, protocol=protocol,
+                    range_start=range_start, range_end=range_end)
 
     host = f"{host_ip}:{port}"
 
@@ -82,11 +97,14 @@ def run(
     locust_file = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                "Locust_tcp.py" if protocol == "tcp" else "Locust_udp.py")
 
+    csv_out = csv_prefix or os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "report")
+
     master_cmd = [
         sys.executable, "-m", "locust",
         "-f", locust_file,
         "--master",
         "--headless",
+        "--csv", csv_out,
         "-u", str(users),
         "-r", str(spawn_rate),
         "--run-time", f"{run_time}s",
@@ -108,6 +126,10 @@ def run(
         print(f"Running Locust on {host}...")
         master_proc = subprocess.Popen(master_cmd, env=env)
         processes.append(master_proc)
+
+        if on_master_start:
+            on_master_start(master_proc)
+
         time.sleep(1)
 
         print(f"Running {worker_count} workers...")

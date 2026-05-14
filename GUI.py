@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import tkinter as tk
+from typing import Any
 import tkinter.filedialog as fd
 import customtkinter as ctk
 import subprocess
@@ -442,6 +443,7 @@ class SavePoolDialog(ctk.CTkToplevel):
 
         self._build(suggested_name)
         self.wait_window()
+        self._stop_requested = False
 
     def _scan_pools(self):
         if not os.path.isdir(self._ip_pool_dir):
@@ -1450,6 +1452,49 @@ class LocustGUI(ctk.CTk):
     # ================================================================
     # PAGE – TCP
     # ================================================================
+    def _build_simple_stages_card(self, scroll, p, s_row, tab):
+        s_row = self._card_header(scroll, "Define Test", s_row)
+        card_stages = ctk.CTkFrame(scroll, fg_color=C_CARD, corner_radius=10)
+        card_stages.grid(row=s_row, column=0, padx=16, pady=(0, 4), sticky="ew")
+        card_stages.grid_columnconfigure(0, weight=1)
+        s_row += 1
+
+        p["stages_frame"] = ctk.CTkFrame(card_stages, fg_color="transparent")
+        p["stages_frame"].grid(row=0, column=0, padx=12, pady=(8, 0), sticky="ew")
+        p["stages_frame"].grid_columnconfigure(0, minsize=150, weight=1)
+        p["stages_frame"].grid_columnconfigure(1, minsize=150, weight=1)
+        p["stages_frame"].grid_columnconfigure(2, minsize=150, weight=1)
+        p["stages_frame"].grid_columnconfigure(3, minsize=150, weight=1)
+        p["stages_frame"].grid_columnconfigure(4, minsize=30, weight=0)
+
+        for col, txt in enumerate(["Duration (s)", "Users", "Spawn rate", "Packet size (bytes)"]):
+            ctk.CTkLabel(
+                p["stages_frame"], text=txt.upper(),
+                font=ctk.CTkFont(size=10, weight="bold"),
+                text_color=C_MUTED, anchor="w"
+            ).grid(row=0, column=col, padx=(0, 4), pady=4, sticky="w")
+
+        p["stage_rows"] = []
+        p["stages"] = [{"duration": 60, "users": 10, "spawn_rate": 1, "packet_size": 60}]
+        p["preset_btn_widgets"] = {}
+
+        ctk.CTkButton(
+            card_stages, text="+ Add stage", height=28,
+            fg_color="transparent", hover_color=C_HOVER,
+            border_width=1, border_color=C_MUTED,
+            font=ctk.CTkFont(size=11), corner_radius=6,
+            command=lambda: self._add_stage_row(tab)
+        ).grid(row=1, column=0, padx=12, pady=(6, 4), sticky="ew")
+
+        p["stages_total_lbl"] = ctk.CTkLabel(
+            card_stages, text="",
+            font=ctk.CTkFont(size=11), text_color=C_MUTED, anchor="w"
+        )
+        p["stages_total_lbl"].grid(row=2, column=0, padx=14, pady=(0, 10), sticky="w")
+
+        self._render_stage_rows_for(p)
+        return s_row
+
     def _build_page_tcp(self, parent):
         p = {}
         self._pages["TCP"] = p
@@ -1472,22 +1517,8 @@ class LocustGUI(ctk.CTk):
         # Nastaví viditeľnosť Request body podľa aktuálnej HTTP metódy
         self._on_http_method_change(self._http_method_combo.get())
         # ── Define Test ───────────────────────────────────────────
-        s_row = self._card_header(scroll, "Define Test", s_row)
-        card_test = self._card(scroll, s_row)
-        s_row += 1
+        s_row = self._build_simple_stages_card(scroll, p, s_row, "TCP")
 
-        self._field_row(card_test, 0, "Users", "tcp_users", "10", col=0,
-                        help="Number of concurrent virtual users sending packets.")
-        self._field_row(card_test, 0, "Spawn rate", "tcp_spawn_rate", "1", col=2,
-                        help="Number of users spawned per second until target is reached.")
-        self._field_row(card_test, 1, "Duration (s)", "tcp_run_time", "60", col=0,
-                        help="Total test duration in seconds.")
-        self._field_row(card_test, 1, "Packet size (bytes)", "tcp_packet_size", "60", col=2,
-                        help="Total packet size in bytes including IP and transport headers.\nMinimum: 40 for TCP.")
-        self._setup_positive_field_highlight("tcp_users")
-        self._setup_positive_field_highlight("tcp_spawn_rate")
-        self._setup_positive_field_highlight("tcp_run_time")
-        self._setup_positive_field_highlight("tcp_packet_size")
         # ── Locust Parameters ─────────────────────────────────────
         s_row = self._card_header(scroll, "Locust Parameters", s_row)
         card = self._card(scroll, s_row)
@@ -1589,23 +1620,8 @@ class LocustGUI(ctk.CTk):
         s_row = 0
 
         # ── Define Test ───────────────────────────────────────────
-        s_row = self._card_header(scroll, "Define Test", s_row)
-        card_test = self._card(scroll,s_row)
-        s_row += 1
+        s_row = self._build_simple_stages_card(scroll, p, s_row, "UDP")
 
-        self._field_row(card_test, 0, "Users", "udp_users", "10", col=0,
-                        help="Number of concurrent virtual users sending packets.")
-        self._field_row(card_test, 0, "Spawn rate", "udp_spawn_rate", "1", col=2,
-                        help="Users spawned per second until target is reached.")
-        self._field_row(card_test, 1, "Duration (s)", "udp_run_time", "60", col=0,
-                        help="Total test duration in seconds.")
-        self._field_row(card_test, 1, "Packet size (bytes)", "udp_packet_size", "60", col=2,
-                        help="Total size in bytes incl. headers.\nMin: 28 for UDP.")
-
-        self._setup_positive_field_highlight("udp_users")
-        self._setup_positive_field_highlight("udp_spawn_rate")
-        self._setup_positive_field_highlight("udp_run_time")
-        self._setup_positive_field_highlight("udp_packet_size")
         # ── Locust Parameters ─────────────────────────────────────
         s_row = self._card_header(scroll, "Locust Parameters", s_row)
         card = self._card(scroll, s_row)
@@ -1677,19 +1693,9 @@ class LocustGUI(ctk.CTk):
 
         scan_range = self.entries.get("src_ports")
         scan_range = scan_range.get().strip() if scan_range else ""
-        self.write_log(f"DEBUG scan_range raw: '{scan_range}'")
         parsed = parse_ports(scan_range)
-        self.write_log(f"DEBUG parsed: {parsed}")
-        if parsed:
-            range_start = str(min(parsed))
-            range_end = str(max(parsed))
-        else:
-            range_start = "1"
-            range_end = "65535"
-
-        worker_count = self.entries[f"{pfx}_users"].get().strip()
-        if worker_count == "-1":
-            worker_count = str(multiprocessing.cpu_count())
+        range_start = str(min(parsed)) if parsed else "1"
+        range_end = str(max(parsed)) if parsed else "65535"
 
         process_count = self.entries[f"{pfx}_processes"].get().strip()
         if process_count == "-1":
@@ -1699,13 +1705,10 @@ class LocustGUI(ctk.CTk):
             "host_ip": self.entries["target"].get().strip(),
             "protocol": pfx,
             "worker_count": process_count,
-            "users": worker_count,
-            "spawn_rate": self.entries[f"{pfx}_spawn_rate"].get().strip(),
-            "run_time": self.entries[f"{pfx}_run_time"].get().strip(),
-            "packet_size": self.entries[f"{pfx}_packet_size"].get().strip(),
-            "range_start": range_start.strip(),
-            "range_end": range_end.strip(),
+            "range_start": range_start,
+            "range_end": range_end,
             "ip_pool_file": os.path.join(os.getcwd(), "ip_pool.txt"),
+            "stages": self._get_stages(),
         }
 
     # ================================================================
@@ -1749,11 +1752,18 @@ class LocustGUI(ctk.CTk):
 
     def _render_stage_rows(self):
         p = self._pages[self._active_page]
+        self._render_stage_rows_for(p)
+
+    def _render_stage_rows_for(self, p):
+        simple_mode = self._active_page in ("TCP", "UDP") if self._active_page else "wait_mode" not in (
+            p["stages"][0] if p["stages"] else {})
         frame = p["stages_frame"]
         for w in frame.winfo_children():
             if int(w.grid_info().get("row", 0)) >= 1:
                 w.destroy()
         p["stage_rows"] = []
+
+
 
         def attach_highlight(entry, validate_fn):
             var = ctk.StringVar(value=entry.get())
@@ -1778,104 +1788,124 @@ class LocustGUI(ctk.CTk):
 
             for col, key in enumerate(["duration", "users", "spawn_rate"]):
                 e = ctk.CTkEntry(
-                    p["stages_frame"], fg_color=C_ENTRY,
+                    frame, fg_color=C_ENTRY,
                     font=ctk.CTkFont(size=12, family="Courier New")
                 )
                 e.insert(0, str(stage[key]))
                 e.grid(row=i+1, column=col, padx=(0, 4), pady=3, sticky="ew")
-                e.bind("<FocusOut>", lambda event: self._update_stage_totals())
+                e.bind("<FocusOut>", lambda event: self._update_stage_totals(p))
                 attach_highlight(e, lambda v: v > 0)
                 row_entries[key] = e
 
-            cb = ctk.CTkComboBox(
-                p["stages_frame"],
-                values=["between", "constant", "constant_throughput"],
-                width=120, fg_color=C_ENTRY,
-                button_color=C_ACTIVE, button_hover_color=C_HOVER,
-                dropdown_fg_color=C_CARD, dropdown_text_color=C_TEXT,
-                font=ctk.CTkFont(size=11)
-            )
-            cb.set(stage.get("wait_mode", "between"))
-            cb.grid(row=i+1, column=3, padx=(0, 4), pady=3, sticky="ew")
-            row_entries["wait_mode"] = cb
+            if not simple_mode:
+                cb = ctk.CTkComboBox(
+                    frame,
+                    values=["between", "constant", "constant_throughput"],
+                    width=120, fg_color=C_ENTRY,
+                    button_color=C_ACTIVE, button_hover_color=C_HOVER,
+                    dropdown_fg_color=C_CARD, dropdown_text_color=C_TEXT,
+                    font=ctk.CTkFont(size=11)
+                )
+                cb.set(stage.get("wait_mode", "between"))
+                cb.grid(row=i + 1, column=3, padx=(0, 4), pady=3, sticky="ew")
+                row_entries["wait_mode"] = cb
 
-            e_min = ctk.CTkEntry(
-                p["stages_frame"], width=50, fg_color=C_ENTRY,
-                font=ctk.CTkFont(size=12, family="Courier New")
-            )
-            e_min.insert(0, str(stage.get("wait_min", "1")))
-            e_min.grid(row=i+1, column=4, padx=(0, 4), pady=3, sticky="ew")
-            row_entries["wait_min"] = e_min
+                e_min = ctk.CTkEntry(frame, width=50, fg_color=C_ENTRY,
+                                     font=ctk.CTkFont(size=12, family="Courier New"))
+                e_min.insert(0, str(stage.get("wait_min", "1")))
+                e_min.grid(row=i + 1, column=4, padx=(0, 4), pady=3, sticky="ew")
+                attach_highlight(e_min, lambda v: v > 0)
+                row_entries["wait_min"] = e_min
 
-            e_max = ctk.CTkEntry(
-                p["stages_frame"], width=50, fg_color=C_ENTRY,
-                font=ctk.CTkFont(size=12, family="Courier New")
-            )
-            e_max.insert(0, str(stage.get("wait_max", "3")))
-            e_max.grid(row=i+1, column=5, padx=(0, 4), pady=3, sticky="ew")
-            row_entries["wait_max"] = e_max
+                e_max = ctk.CTkEntry(frame, width=50, fg_color=C_ENTRY,
+                                     font=ctk.CTkFont(size=12, family="Courier New"))
+                e_max.insert(0, str(stage.get("wait_max", "3")))
+                e_max.grid(row=i + 1, column=5, padx=(0, 4), pady=3, sticky="ew")
+                attach_highlight(e_max, lambda v: v > 0)
+                row_entries["wait_max"] = e_max
 
-            def _on_wait_mode_change(mode, _row=i+1, _emin=e_min, _emax=e_max):
-                if mode == "between":
-                    _emin.grid(row=_row, column=4, columnspan=1,
-                               padx=(0, 4), pady=3, sticky="ew")
-                    _emax.grid(row=_row, column=5,
-                               padx=(0, 4), pady=3, sticky="ew")
-                    if p["hdr_min_lbl"]:
-                        p["hdr_min_lbl"].grid(row=0, column=4, columnspan=1,
-                                               padx=(0, 4), pady=4, sticky="w")
-                        p["hdr_min_lbl"].configure(text="MIN ⓘ")
-                    if p["hdr_max_lbl"]:
-                        p["hdr_max_lbl"].grid(row=0, column=5,
-                                               padx=(0, 4), pady=4, sticky="w")
-                else:
-                    _emax.grid_remove()
-                    _emin.grid(row=_row, column=4, columnspan=2,
-                               padx=(0, 4), pady=3, sticky="ew")
-                    if p["hdr_min_lbl"]:
-                        p["hdr_min_lbl"].grid(row=0, column=4, columnspan=2,
-                                               padx=(0, 4), pady=4, sticky="w")
-                        p["hdr_min_lbl"].configure(text="MIN ⓘ")
-                    if p["hdr_max_lbl"]:
-                        p["hdr_max_lbl"].grid_remove()
+                def _on_wait_mode_change(mode, _row=i + 1, _emin=e_min, _emax=e_max):
+                    if mode == "between":
+                        _emin.grid(row=_row, column=4, columnspan=1,
+                                   padx=(0, 4), pady=3, sticky="ew")
+                        _emax.grid(row=_row, column=5,
+                                   padx=(0, 4), pady=3, sticky="ew")
+                        if p["hdr_min_lbl"]:
+                            p["hdr_min_lbl"].grid(row=0, column=4, columnspan=1,
+                                                  padx=(0, 4), pady=4, sticky="w")
+                            p["hdr_min_lbl"].configure(text="MIN ⓘ")
+                        if p["hdr_max_lbl"]:
+                            p["hdr_max_lbl"].grid(row=0, column=5,
+                                                  padx=(0, 4), pady=4, sticky="w")
+                    else:
+                        _emax.grid_remove()
+                        _emin.grid(row=_row, column=4, columnspan=2,
+                                   padx=(0, 4), pady=3, sticky="ew")
+                        if p["hdr_min_lbl"]:
+                            p["hdr_min_lbl"].grid(row=0, column=4, columnspan=2,
+                                                  padx=(0, 4), pady=4, sticky="w")
+                            p["hdr_min_lbl"].configure(text="MIN ⓘ")
+                        if p["hdr_max_lbl"]:
+                            p["hdr_max_lbl"].grid_remove()
 
-            _on_wait_mode_change(stage.get("wait_mode", "between"))
-            cb.configure(command=_on_wait_mode_change)
+                _on_wait_mode_change(stage.get("wait_mode", "between"))
+                cb.configure(command=_on_wait_mode_change)
 
-            ctk.CTkButton(
-                p["stages_frame"], text="✕", width=28, height=28,
-                fg_color="transparent", hover_color=C_DANGER,
-                font=ctk.CTkFont(size=11), corner_radius=4,
-                command=lambda idx=i: self._del_stage_row(idx)
-            ).grid(row=i+1, column=6, padx=(2, 0), pady=3)
+                ctk.CTkButton(
+                    frame, text="✕", width=28, height=28,
+                    fg_color="transparent", hover_color=C_DANGER,
+                    font=ctk.CTkFont(size=11), corner_radius=4,
+                    command=lambda idx=i: self._del_stage_row(idx)
+                ).grid(row=i + 1, column=6, padx=(2, 0), pady=3)
+
+            else:
+                e_pkt = ctk.CTkEntry(frame, fg_color=C_ENTRY,
+                                     font=ctk.CTkFont(size=12, family="Courier New"))
+                e_pkt.insert(0, str(stage.get("packet_size", "60")))
+                e_pkt.grid(row=i+1, column=3, padx=(0, 4), pady=3, sticky="ew")
+                attach_highlight(e_pkt, lambda v: v > 0)
+                row_entries["packet_size"] = e_pkt
+
+                ctk.CTkButton(
+                    frame, text="✕", width=28, height=28,
+                    fg_color="transparent", hover_color=C_DANGER,
+                    font=ctk.CTkFont(size=11), corner_radius=4,
+                    command=lambda idx=i: self._del_stage_row(idx)
+                ).grid(row=i+1, column=4, padx=(2, 0), pady=3)
 
             p["stage_rows"].append(row_entries)
-        self._update_stage_totals()
+        self._update_stage_totals(p)
 
     def _get_stages(self):
         stages = []
         p = self._pages[self._active_page]
+        simple_mode = self._active_page in ("TCP", "UDP")
         for i, row in enumerate(p["stage_rows"]):
             try:
-                wait_mode    = row["wait_mode"].get()
-                wait_max_raw = row["wait_max"].get().strip()
-                wait_min     = float(row["wait_min"].get().strip() or 1)
-                wait_max     = float(wait_max_raw) if wait_max_raw else wait_min
-
-                stages.append({
-                    "duration":   int(row["duration"].get().strip()   or 0),
-                    "users":      int(row["users"].get().strip()      or 0),
+                stage: dict[str, Any] = {
+                    "duration": int(row["duration"].get().strip() or 0),
+                    "users": int(row["users"].get().strip() or 0),
                     "spawn_rate": int(row["spawn_rate"].get().strip() or 1),
-                    "wait_mode":  wait_mode,
-                    "wait_min":   wait_min,
-                    "wait_max":   wait_max,
-                })
+                }
+                if simple_mode:
+                    stage["packet_size"] = int(row["packet_size"].get().strip() or 60)
+                else:
+                    wait_max_raw = row["wait_max"].get().strip()
+                    wait_min = float(row["wait_min"].get().strip() or 1)
+                    wait_max = float(wait_max_raw) if wait_max_raw else wait_min
+                    stage["wait_mode"] = str(row["wait_mode"].get())
+                    stage["wait_min"] = wait_min
+                    stage["wait_max"] = wait_max
+                stages.append(stage)
             except (ValueError, KeyError) as e:
-                print(f"[WARN] Stage row {i+1} skipped: {e}")
+                print(f"[WARN] Stage row {i + 1} skipped: {e}")
         return stages
 
-    def _update_stage_totals(self):
-        p = self._pages[self._active_page]
+    def _update_stage_totals(self, p=None):
+        if p is None:
+            if self._active_page is None:
+                return
+            p = self._pages[self._active_page]
         if "stage_rows" not in p or "stages_total_lbl" not in p:
             return
         try:
@@ -1907,7 +1937,7 @@ class LocustGUI(ctk.CTk):
 
         except Exception as e:
             p["stages_total_lbl"].configure(
-                text=f"Total: invalid stage values"
+                text="Total: invalid stage values"
             )
     def _save_stages(self):
         stages = self._get_stages()
@@ -3090,9 +3120,10 @@ class LocustGUI(ctk.CTk):
         path = self._locustfile_paths.get(active)
 
         if not path or not os.path.isfile(path):
-            self.write_log(f"✗ [{active}] No locustfile selected. Use Browse to select one before running.")
+            self.write_log(f"✗ [{active}] No locustfile selected.")
             return
 
+        self._stop_requested = False  # reset before starting
         self._set_stop_enabled(True)
         threading.Thread(target=self._run_test_thread, daemon=True).start()
         p = self._pages.get(self._active_page)
@@ -3138,6 +3169,93 @@ class LocustGUI(ctk.CTk):
                 command=lambda: None
             )
 
+    def _merge_stage_csvs(self, stage_dirs, output_dir):
+        import pandas as pd
+        import numpy as np
+
+        # ── history: concatenate with adjusted timestamps ──
+        history_frames = []
+        time_offset = 0
+        for stage_dir in stage_dirs:
+            hist_file = os.path.join(stage_dir, "report_stats_history.csv")
+            if not os.path.exists(hist_file):
+                continue
+            df = pd.read_csv(hist_file)
+            if df.empty:
+                continue
+            # normalize timestamps to start from 0, then offset
+            df["Timestamp"] = df["Timestamp"] - df["Timestamp"].iloc[0] + time_offset
+            time_offset = df["Timestamp"].iloc[-1] + 1
+            history_frames.append(df)
+
+        if history_frames:
+            pd.concat(history_frames, ignore_index=True).to_csv(
+                os.path.join(output_dir, "report_stats_history.csv"), index=False
+            )
+
+        # ── stats: aggregate across stages ──
+        stats_frames = []
+        for stage_dir in stage_dirs:
+            stats_file = os.path.join(stage_dir, "report_stats.csv")
+            if os.path.exists(stats_file):
+                stats_frames.append(pd.read_csv(stats_file))
+
+        if stats_frames:
+            df = pd.concat(stats_frames, ignore_index=True)
+            # drop aggregated rows, recompute at end
+            df = df[df["Name"] != "Aggregated"]
+            agg = df.groupby(["Type", "Name"]).apply(lambda g: pd.Series({
+                "Request Count": g["Request Count"].sum(),
+                "Failure Count": g["Failure Count"].sum(),
+                "Average Response Time": np.average(g["Average Response Time"], weights=g["Request Count"]),
+                "Min Response Time": g["Min Response Time"].min(),
+                "Max Response Time": g["Max Response Time"].max(),
+                "Average Content Size": np.average(g["Average Content Size"], weights=g["Request Count"]),
+                "Requests/s": g["Requests/s"].mean(),
+                "Failures/s": g["Failures/s"].mean(),
+                # percentiles: weighted average (approximation)
+                "50%": np.average(g["50%"], weights=g["Request Count"]),
+                "66%": np.average(g["66%"], weights=g["Request Count"]),
+                "75%": np.average(g["75%"], weights=g["Request Count"]),
+                "80%": np.average(g["80%"], weights=g["Request Count"]),
+                "90%": np.average(g["90%"], weights=g["Request Count"]),
+                "95%": np.average(g["95%"], weights=g["Request Count"]),
+                "98%": np.average(g["98%"], weights=g["Request Count"]),
+                "99%": np.average(g["99%"], weights=g["Request Count"]),
+                "99.9%": np.average(g["99.9%"], weights=g["Request Count"]),
+                "99.99%": np.average(g["99.99%"], weights=g["Request Count"]),
+                "100%": g["100%"].max(),
+                "Median Response Time": np.average(g["Median Response Time"], weights=g["Request Count"]),
+            }), include_groups=False).reset_index()
+
+            # add aggregated row
+            total = agg["Request Count"].sum()
+            agg_row = pd.DataFrame([{
+                "Type": "", "Name": "Aggregated",
+                "Request Count": total,
+                "Failure Count": agg["Failure Count"].sum(),
+                "Average Response Time": np.average(agg["Average Response Time"], weights=agg["Request Count"]),
+                "Min Response Time": agg["Min Response Time"].min(),
+                "Max Response Time": agg["Max Response Time"].max(),
+                "Average Content Size": np.average(agg["Average Content Size"], weights=agg["Request Count"]),
+                "Requests/s": agg["Requests/s"].mean(),
+                "Failures/s": agg["Failures/s"].mean(),
+                "50%": np.average(agg["50%"], weights=agg["Request Count"]),
+                "66%": np.average(agg["66%"], weights=agg["Request Count"]),
+                "75%": np.average(agg["75%"], weights=agg["Request Count"]),
+                "80%": np.average(agg["80%"], weights=agg["Request Count"]),
+                "90%": np.average(agg["90%"], weights=agg["Request Count"]),
+                "95%": np.average(agg["95%"], weights=agg["Request Count"]),
+                "98%": np.average(agg["98%"], weights=agg["Request Count"]),
+                "99%": np.average(agg["99%"], weights=agg["Request Count"]),
+                "99.9%": np.average(agg["99.9%"], weights=agg["Request Count"]),
+                "99.99%": np.average(agg["99.99%"], weights=agg["Request Count"]),
+                "100%": agg["100%"].max(),
+                "Median Response Time": np.average(agg["Median Response Time"], weights=agg["Request Count"]),
+            }])
+            pd.concat([agg, agg_row], ignore_index=True).to_csv(
+                os.path.join(output_dir, "report_stats.csv"), index=False
+            )
     def _run_test_thread(self):
         if not self._validate_fields():
             self._set_stop_enabled(False)
@@ -3145,11 +3263,14 @@ class LocustGUI(ctk.CTk):
         # ================================================================
         # TCP/UDP
         # ================================================================
+
         if self._active_page in ("TCP", "UDP"):
             params = self._collect_run_params()
-            self.write_log(f"DEBUG params: {params}")
+            stages: list[dict[str, Any]] = params.pop("stages")
+            total_run_time = sum(int(str(s["duration"])) for s in stages)
+
             self.write_log("=" * 60)
-            self.write_log(f"▶ [{self._active_page}] Starting test on {params['host_ip']}...")
+            self.write_log(f"▶ [{self._active_page}] Starting {len(stages)}-stage test on {params['host_ip']}...")
             self.write_log("-" * 60)
 
             try:
@@ -3160,25 +3281,55 @@ class LocustGUI(ctk.CTk):
                 )
                 self._network_monitor.start()
 
-                run_time = params.get("run_time")
                 interval = int(self.get("reach_interval") or 5)
                 reach_thread = threading.Thread(
-                    target=self._run_reachability, args=(run_time, interval, params.get("host_ip")), daemon=True
+                    target=self._run_reachability,
+                    args=(total_run_time, interval, params.get("host_ip")),
+                    daemon=True
                 )
                 reach_thread.start()
-                print(f"DEBUG reach_thread started, active_page={self._active_page}")
 
                 self._save_test_config(BASE_DIR)
                 start_time = datetime.now()
-                test_main.run(**params)
-                end_time = datetime.now()
 
-                self._test_meta = {
-                    "start_time": start_time.strftime("%d-%m-%Y %H:%M:%S"),
-                    "end_time": end_time.strftime("%d-%m-%Y %H:%M:%S"),
-                    "duration": (end_time - start_time).total_seconds(),
-                    "target_host": params["host_ip"],
-                }
+                self.write_log("🔍 Scanning for open ports...")
+                port = test_main.scan(
+                    host_ip=params["host_ip"],
+                    protocol=params["protocol"],
+                    range_start=params["range_start"],
+                    range_end=params["range_end"],
+                )
+                self.write_log(f"✓ Using port {port} for all stages.")
+
+                stage_dirs = []
+                for i, stage in enumerate(stages):
+                    if self._stop_requested:
+                        self.write_log("⛔ Test stopped — remaining stages skipped.")
+                        break
+
+                    stage_dir = os.path.join(DATA_DIR, f"stage_{i + 1}")
+                    os.makedirs(stage_dir, exist_ok=True)
+                    stage_dirs.append(stage_dir)
+
+                    self.write_log(f"  Stage {i + 1}/{len(stages)}: {stage['users']} users, "
+                                   f"{stage['spawn_rate']} spawn rate, {stage['duration']}s, "
+                                   f"{stage.get('packet_size', 60)}B packets")
+                    test_main.run(
+                        **params,
+                        port=port,
+                        users=str(stage["users"]),
+                        spawn_rate=str(stage["spawn_rate"]),
+                        run_time=str(stage["duration"]),
+                        packet_size=str(stage.get("packet_size", 60)),
+                        csv_prefix=os.path.join(stage_dir, "report"),
+                        on_master_start=lambda proc: setattr(self, "locust_process", proc),
+                    )
+
+                if stage_dirs:
+                    self.write_log("  Merging stage data...")
+                    self._merge_stage_csvs(stage_dirs, DATA_DIR)
+
+                end_time = datetime.now()
 
                 ip_pool_file = params.get("ip_pool_file", "")
                 try:
@@ -3191,17 +3342,19 @@ class LocustGUI(ctk.CTk):
                     "start_time": start_time.strftime("%d-%m-%Y %H:%M:%S"),
                     "end_time": end_time.strftime("%d-%m-%Y %H:%M:%S"),
                     "duration": (end_time - start_time).total_seconds(),
+                    "stages_duration": total_run_time,
                     "test_type": self._active_page,
                     "target_host": params["host_ip"],
                     "target_ip": params["host_ip"],
                     "used_ips": ", ".join(ip_pool),
                     "ip_pool_count": len(ip_pool),
-                    "packet_size": int(params.get("packet_size", 0)),
+                    "packet_size": int(stages[0].get("packet_size", 60)) if stages else 0,
                 }])
                 meta_df.to_csv(os.path.join(DATA_DIR, "report_metadata.csv"), index=False)
                 self.write_log("-" * 60)
                 self.write_log(f"✓ [{self._active_page}] Test completed.")
                 reach_thread.join(timeout=5)
+
             except Exception as e:
                 self.write_log(f"✗ Test error: {e}")
             finally:
@@ -3340,6 +3493,7 @@ class LocustGUI(ctk.CTk):
                     pass
 
     def stop_locust(self):
+        self._stop_requested = True
         if not self._stop_enabled:
             return
 
