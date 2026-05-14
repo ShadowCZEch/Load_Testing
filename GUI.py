@@ -1218,6 +1218,10 @@ class LocustGUI(ctk.CTk):
         self._field_row(card3, 2, "Reachability failure threshold (%)", "reach_threshold", "5", col=0,
                         help="Maximum allowed percentage of failed reachability probes.\nThis threshold applies only to reachability monitoring, not to Locust request failures.")
 
+        self._setup_positive_field_highlight("reach_interval")
+        self._setup_positive_field_highlight("reach_timeout")
+        self._setup_percentage_field_highlight("reach_threshold")
+        self._setup_percentage_field_highlight("request_threshold")
         # ── Network Monitor ───────────────────────────────────────
         row = self._card_header(scroll, "Network Monitor", row)
         card_mon = self._card(scroll, row); row += 1
@@ -1356,6 +1360,10 @@ class LocustGUI(ctk.CTk):
         self._field_row(card, 1, "Read timeout (s)", "read_timeout", "15", col=2,
                         help="Maximum time (seconds) to wait for a server response.\nIncrease for endpoints with slow processing times.")
         self._setup_process_field_highlight("processes")
+        self._setup_positive_field_highlight("stop_timeout")
+        self._setup_positive_field_highlight("connect_timeout")
+        self._setup_positive_field_highlight("read_timeout")
+
         # ── Request Settings card ──────────────────────────────────
         s_row = self._card_header(scroll, "Request Settings", s_row)
         card_req = self._card(scroll, s_row)
@@ -1747,6 +1755,24 @@ class LocustGUI(ctk.CTk):
                 w.destroy()
         p["stage_rows"] = []
 
+        def attach_highlight(entry, validate_fn):
+            var = ctk.StringVar(value=entry.get())
+            entry.configure(textvariable=var)
+
+            def on_change(*_):
+                val = var.get().strip()
+                try:
+                    if not validate_fn(float(val)):
+                        entry.configure(fg_color="#4a1a1a")
+                    else:
+                        entry.configure(fg_color=C_ENTRY)
+                except ValueError:
+                    entry.configure(fg_color="#4a1a1a")
+
+            var.trace_add("write", on_change)
+            entry.after(100, on_change)
+            p.setdefault("_stage_vars", []).append(var)
+
         for i, stage in enumerate(p["stages"]):
             row_entries = {}
 
@@ -1758,6 +1784,7 @@ class LocustGUI(ctk.CTk):
                 e.insert(0, str(stage[key]))
                 e.grid(row=i+1, column=col, padx=(0, 4), pady=3, sticky="ew")
                 e.bind("<FocusOut>", lambda event: self._update_stage_totals())
+                attach_highlight(e, lambda v: v > 0)
                 row_entries[key] = e
 
             cb = ctk.CTkComboBox(
@@ -1849,6 +1876,8 @@ class LocustGUI(ctk.CTk):
 
     def _update_stage_totals(self):
         p = self._pages[self._active_page]
+        if "stage_rows" not in p or "stages_total_lbl" not in p:
+            return
         try:
             stages = self._get_stages()
 
@@ -2467,6 +2496,31 @@ class LocustGUI(ctk.CTk):
         var.trace_add("write", on_change)
         self._process_vars = getattr(self, "_process_vars", {})
         self._process_vars[key] = var
+
+    def _setup_percentage_field_highlight(self, key):
+        entry = self.entries.get(key)
+        if not entry:
+            return
+
+        def on_change(*args):
+            val = entry.get().strip()
+            try:
+                num = float(val)
+                if num < 0 or num > 100:
+                    entry.configure(fg_color="#4a1a1a")
+                else:
+                    entry.configure(fg_color=C_ENTRY)
+            except ValueError:
+                entry.configure(fg_color="#4a1a1a")
+
+        var = ctk.StringVar()
+        current_value = entry.get()
+        entry.configure(textvariable=var)
+        var.set(current_value)
+        var.trace_add("write", on_change)
+        self._process_vars = getattr(self, "_process_vars", {})
+        self._process_vars[key] = var
+        entry.after(100, on_change)
 
     def _combo_row(self, card, row, label, key, values, default, col=0, help: str = None):
         lbl = ctk.CTkLabel(
