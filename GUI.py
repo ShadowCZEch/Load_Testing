@@ -3183,9 +3183,11 @@ class LocustGUI(ctk.CTk):
             df = pd.read_csv(hist_file)
             if df.empty:
                 continue
-            # normalize timestamps to start from 0, then offset
-            df["Timestamp"] = df["Timestamp"] - df["Timestamp"].iloc[0] + time_offset
-            time_offset = df["Timestamp"].iloc[-1] + 1
+            if history_frames:
+                last_ts = history_frames[-1]["Timestamp"].iloc[-1]
+                first_ts = df["Timestamp"].iloc[0]
+                if first_ts <= last_ts:
+                    df["Timestamp"] = df["Timestamp"] - first_ts + last_ts + 1
             history_frames.append(df)
 
         if history_frames:

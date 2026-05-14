@@ -110,7 +110,7 @@ def run(
         "--run-time", f"{run_time}s",
         "--expect-workers", str(worker_count),
         "--html", os.path.join(os.path.dirname(os.path.abspath(__file__)), "report.html"),
-        "--csv", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "report"),
+        "--csv", csv_out,
         "--host", host
     ]
 
