@@ -1,48 +1,41 @@
 # locustfile_tcp.py
 
 import os
-from gevent import monkey
+from Packet_create import tcp_packet
 import time
-import queue
+import random
 from locust import User, task, events, constant
 from gevent import sleep
-
-monkey.patch_all()
 
 
 TARGET_PORT = int(os.environ.get("TARGET_PORT", 0))
 
-ip_queue = queue.Queue()
+_ip_pool = []
+
 
 @events.test_start.add_listener
 def on_test_start(**_kwargs):
+    global _ip_pool
     pool_file = os.environ.get("IP_POOL_FILE")
     if pool_file and os.path.exists(pool_file):
         with open(pool_file, "r") as f:
-            for line in f:
-                addr = line.strip()
-                if addr:
-                    ip_queue.put(addr)
-        print(f"[Locust] Načteno {ip_queue.qsize()} unikátních zdrojových IP.")
+            _ip_pool = [line.strip() for line in f if line.strip()]
+            print(f"[Locust] Loaded {len(_ip_pool)} source IPs.")
+
     else:
         print("[Error] Soubor s IP pool nebyl nalezen!")
 
 class UserClass(User):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.source_ip = None
 
     wait_time = constant(0)
 
     def on_start(self):
-        try:
-            self.source_ip = ip_queue.get_nowait()
-        except queue.Empty:
-            self.source_ip = None
+        if not _ip_pool:
+            raise Exception("IP pool is empty — check IP_POOL_FILE")
+        self.source_ip = random.choice(_ip_pool)
 
     @task
     def keep_send(self):
-        from Packet_create import tcp_packet
 
         start = time.perf_counter()
         try:

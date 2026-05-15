@@ -134,7 +134,9 @@ def run(
 
         print(f"Running {worker_count} workers...")
         for i in range(worker_count):
-            w_proc=subprocess.Popen(worker_cmd, env=env)
+            w_env = env.copy()
+            w_env["LOCUST_WORKER_ID"] = str(i)
+            w_proc = subprocess.Popen(worker_cmd, env=w_env)
             processes.append(w_proc)
 
         master_proc.wait()
