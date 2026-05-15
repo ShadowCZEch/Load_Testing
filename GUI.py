@@ -891,6 +891,26 @@ class LocustGUI(ctk.CTk):
 
     def _validate_fields(self):
         pfx = self._active_page.lower()
+        p = self._pages.get(self._active_page)
+
+        if p is None:
+            return True
+
+        for i, row in enumerate(p.get("stage_rows", []), start=1):
+            for field, label in {"duration": "Duration", "users": "Users",
+                                 "spawn_rate": "Spawn rate", "packet_size": "Packet size"}.items():
+                entry = row.get(field)
+                if not entry:
+                    continue
+                val = entry.get().strip()
+                try:
+                    num = float(val)
+                    if num <= 0:
+                        self.write_log(f"✗ Stage {i} — {label} '{val}' must be greater than 0.")
+                        return False
+                except ValueError:
+                    self.write_log(f"✗ Stage {i} — {label} '{val}' is not a valid number.")
+                    return False
 
         # Process fields (-1 or positive)
         for key in ["processes", f"{pfx}_processes"]:
@@ -914,7 +934,27 @@ class LocustGUI(ctk.CTk):
             f"{pfx}_run_time": "Duration",
             f"{pfx}_packet_size": "Packet size",
             f"{pfx}_stop_timeout": "Stop timeout",
+            "reach_interval": "Reachability interval",
+            "reach_timeout": "Reachability timeout",
         }
+        percentage_fields = {
+            "reach_threshold": "Reachability failure threshold",
+            "request_threshold": "Request failure threshold",
+        }
+        for key, label in percentage_fields.items():
+            entry = self.entries.get(key)
+            if not entry:
+                continue
+            val = entry.get().strip()
+            try:
+                num = float(val)
+                if num < 0 or num > 100:
+                    self.write_log(f"✗ Invalid {label} '{val}' — must be between 0 and 100.")
+                    return False
+            except ValueError:
+                self.write_log(f"✗ Invalid {label} '{val}' — must be a number.")
+                return False
+
         for key, label in positive_fields.items():
             entry = self.entries.get(key)
             if not entry:
@@ -2696,6 +2736,7 @@ class LocustGUI(ctk.CTk):
     # GENERIC HELPERS
     # ================================================================
 
+
     # ================================================================
     # OPEN FILE  (platform helper – used by report generator & report list)
     # ================================================================
@@ -3117,6 +3158,10 @@ class LocustGUI(ctk.CTk):
 
     def run_test(self):
         active = self._active_page
+
+        if not self._validate_fields():
+            return
+
         path = self._locustfile_paths.get(active)
 
         if not path or not os.path.isfile(path):
