@@ -858,7 +858,7 @@ class LocustGUI(ctk.CTk):
             self._nav_buttons[label] = btn
 
         ctk.CTkFrame(sidebar, height=1, fg_color="#2a3a5e"
-                     ).grid(row=8, column=0, padx=12, pady=12, sticky="ew")
+                     ).grid(row=9, column=0, padx=12, pady=12, sticky="ew")
 
         ctk.CTkLabel(sidebar, text="THEME",
                      font=ctk.CTkFont(size=10, weight="bold"),
@@ -1305,11 +1305,6 @@ class LocustGUI(ctk.CTk):
     # ================================================================
 
     def _build_page_http(self, parent):
-        p = {}
-        p["preset_btn_widgets"] = {}
-        self._pages["HTTP/S"] = p
-        p["stage_rows"] = []
-        p["stages"] = []
         outer = ctk.CTkFrame(parent, fg_color="transparent", corner_radius=0)
         outer.grid(row=0, column=0, sticky="nsew")
         outer.grid_columnconfigure(0, weight=1)
@@ -1339,60 +1334,61 @@ class LocustGUI(ctk.CTk):
                 command=lambda n=name: self._load_preset(n)
             )
             btn.pack(side="left", padx=(0, 6))
-            p["preset_btn_widgets"][name] = btn
+            self._preset_btns[name] = btn
 
-        p["stages_frame"] = ctk.CTkFrame(card_stages, fg_color="transparent")
-        p["stages_frame"].grid(row=1, column=0, padx=12, pady=(2, 0), sticky="ew")
-        p["stages_frame"].grid_columnconfigure(0, minsize=180, weight=1)
-        p["stages_frame"].grid_columnconfigure(1, minsize=180, weight=1)
-        p["stages_frame"].grid_columnconfigure(2, minsize=180, weight=1)
-        p["stages_frame"].grid_columnconfigure(3, minsize=130, weight=0)
-        p["stages_frame"].grid_columnconfigure(4, minsize=55, weight=0)
-        p["stages_frame"].grid_columnconfigure(5, minsize=55, weight=0)
-        p["stages_frame"].grid_columnconfigure(6, minsize=30, weight=0)
-        p["hdr_min_lbl"] = None
-        p["hdr_max_lbl"] = None
-
+        self._stages_frame = ctk.CTkFrame(card_stages, fg_color="transparent")
+        self._stages_frame.grid(row=1, column=0, padx=12, pady=(2, 0), sticky="ew")
+        self._stages_frame.grid_columnconfigure(0, minsize=180, weight=1)
+        self._stages_frame.grid_columnconfigure(1, minsize=180, weight=1)
+        self._stages_frame.grid_columnconfigure(2, minsize=180, weight=1)
+        self._stages_frame.grid_columnconfigure(3, minsize=130, weight=0)
+        self._stages_frame.grid_columnconfigure(4, minsize=55, weight=0)
+        self._stages_frame.grid_columnconfigure(5, minsize=55, weight=0)
+        self._stages_frame.grid_columnconfigure(6, minsize=30, weight=0)
+        self._hdr_min_lbl = None
+        self._hdr_max_lbl = None
         for col, (txt, help_txt) in enumerate([
             ("Duration (s)", "Duration of this stage only.\nExample: 60, 120, 120 means total test time 300 seconds."),
-            ("Users",        None),
-            ("Spawn rate",   None),
-            ("Wait mode",    "between – random wait between Min and Max\nconstant – fixed wait of Min seconds\nconstant_throughput – Min = target RPS per user"),
-            ("Min",          "between: minimum wait (s)\nconstant: fixed wait (s)\nconstant_throughput: target RPS"),
-            ("Max",          "between: maximum wait (s)\nIgnored in other modes"),
+            ("Users", None),
+            ("Spawn rate", None),
+            ("Wait mode",
+             "between – random wait between Min and Max\nconstant – fixed wait of Min seconds\nconstant_throughput – Min = target RPS per user"),
+            ("Min", "between: minimum wait (s)\nconstant: fixed wait (s)\nconstant_throughput: target RPS"),
+            ("Max", "between: maximum wait (s)\nIgnored in other modes"),
         ]):
             lbl = ctk.CTkLabel(
-                p["stages_frame"],
+                self._stages_frame,
                 text=f"{txt.upper()} ⓘ" if help_txt else txt.upper(),
                 font=ctk.CTkFont(size=10, weight="bold"),
                 text_color=C_MUTED, anchor="w",
                 cursor="question_arrow" if help_txt else "arrow"
             )
-            lbl.grid(row=0, column=col, padx=(0,4), pady=4, sticky="w")
+            lbl.grid(row=0, column=col, padx=(0, 4), pady=4, sticky="w")
             if help_txt:
                 CTkToolTip(lbl, message=help_txt, delay=0.3, x_offset=10, y_offset=-10)
             if txt == "Min":
-                p["hdr_min_lbl"] = lbl
+                self._hdr_min_lbl = lbl
             elif txt == "Max":
-                p["hdr_max_lbl"] = lbl
+                self._hdr_max_lbl = lbl
 
         ctk.CTkButton(
             card_stages, text="+ Add stage", height=28,
             fg_color="transparent", hover_color=C_HOVER,
             border_width=1, border_color=C_MUTED,
             font=ctk.CTkFont(size=11), corner_radius=6,
-            command=lambda: self._add_stage_row("HTTP/S")
+            command=self._add_stage_row
         ).grid(row=3, column=0, padx=12, pady=(6, 4), sticky="ew")
 
-        p["stages_total_lbl"] = ctk.CTkLabel(
+        self._stages_total_lbl = ctk.CTkLabel(
             card_stages, text="",
             font=ctk.CTkFont(size=11), text_color=C_MUTED, anchor="w"
         )
-        p["stages_total_lbl"].grid(row=4, column=0, padx=14, pady=(0, 10), sticky="w")
+        self._stages_total_lbl.grid(row=4, column=0, padx=14, pady=(0, 10), sticky="w")
 
         # ── Locust Parameters ─────────────────────────────────────
         s_row = self._card_header(scroll, "Locust Parameters", s_row)
-        card = self._card(scroll, s_row); s_row += 1
+        card = self._card(scroll, s_row)
+        s_row += 1
         self._field_row(card, 0, "Stop timeout (s)", "stop_timeout", "60", col=0,
                         help="Time (seconds) Locust waits for running users to finish\ntheir current task after the test ends.\nIncrease for long-running requests.")
         self._field_row(card, 0, "Processes", "processes", "-1", col=2,
@@ -1401,72 +1397,117 @@ class LocustGUI(ctk.CTk):
                         help="Maximum time (seconds) to establish a TCP connection.\nIncrease for slow or distant servers.")
         self._field_row(card, 1, "Read timeout (s)", "read_timeout", "15", col=2,
                         help="Maximum time (seconds) to wait for a server response.\nIncrease for endpoints with slow processing times.")
-        self._setup_process_field_highlight("processes")
-        self._setup_positive_field_highlight("stop_timeout")
-        self._setup_positive_field_highlight("connect_timeout")
-        self._setup_positive_field_highlight("read_timeout")
 
-        # ── Request Settings card ──────────────────────────────────
+        # ── Request Settings ───────────────────────────────────────
         s_row = self._card_header(scroll, "Request Settings", s_row)
         card_req = self._card(scroll, s_row)
         s_row += 1
 
         ctk.CTkLabel(
-            card_req, text="HTTP method", font=ctk.CTkFont(size=15),
-            text_color=C_TEXT, anchor="w", width=self.LBL_W
+            card_req,
+            text="HTTP method",
+            font=ctk.CTkFont(size=15),
+            text_color=C_TEXT,
+            anchor="w",
+            width=self.LBL_W
         ).grid(row=0, column=0, padx=(16, 8), pady=10, sticky="w")
 
         self._http_method_combo = ctk.CTkComboBox(
-            card_req, values=["GET", "POST"], width=self.ENTR_W,
-            fg_color=C_ENTRY, button_color=C_ACTIVE, button_hover_color=C_HOVER,
-            dropdown_fg_color=C_CARD, dropdown_text_color=C_TEXT,
+            card_req,
+            values=["GET", "POST"],
+            width=self.ENTR_W,
+            fg_color=C_ENTRY,
+            button_color=C_ACTIVE,
+            button_hover_color=C_HOVER,
+            dropdown_fg_color=C_CARD,
+            dropdown_text_color=C_TEXT,
             command=self._on_http_method_change
         )
         self._http_method_combo.set(os.getenv("HTTP_METHOD", "GET"))
         self._http_method_combo.grid(row=0, column=1, padx=(0, 16), pady=10, sticky="ew")
-        self.entries["http_method"] = self._http_method_combo
 
+        self.entries["http_method"] = self._http_method_combo
         self._request_body_frame = ctk.CTkFrame(card_req, fg_color="transparent")
         self._request_body_frame.grid(row=1, column=0, columnspan=4, sticky="ew")
         self._request_body_frame.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(
-            self._request_body_frame, text="Request body JSON",
-            font=ctk.CTkFont(size=15), text_color=C_TEXT, anchor="w", width=self.LBL_W
+            self._request_body_frame,
+            text="Request body JSON",
+            font=ctk.CTkFont(size=15),
+            text_color=C_TEXT,
+            anchor="w",
+            width=self.LBL_W
         ).grid(row=0, column=0, padx=(16, 8), pady=10, sticky="nw")
 
         self.request_body_text = ctk.CTkTextbox(
-            self._request_body_frame, height=90, corner_radius=8,
+            self._request_body_frame,
+            height=90,
+            corner_radius=8,
             font=ctk.CTkFont(size=12, family="Courier New"),
-            fg_color=C_ENTRY, text_color=C_TEXT
+            fg_color=C_ENTRY,
+            text_color=C_TEXT
         )
-        self.request_body_text.grid(row=0, column=1, columnspan=3, padx=(0, 16), pady=10, sticky="ew")
+        self.request_body_text.grid(
+            row=0,
+            column=1,
+            columnspan=3,
+            padx=(0, 16),
+            pady=10,
+            sticky="ew"
+        )
 
-        # ── Locustfile card ────────────────────────────────────────
-        s_row = self._card_header(scroll, "Locust File", s_row)
+        default_body = os.getenv("REQUEST_BODY", "").strip()
+        if default_body:
+            self.request_body_text.insert("0.0", default_body)
+
+        # Nastaví viditeľnosť Request body podľa aktuálnej HTTP metódy
+        self._on_http_method_change(self._http_method_combo.get())
+
+        # ── Locustfile ────────────────────────────────────────────
+        s_row = self._card_header(scroll, "Locustfile", s_row)
         card_lf = self._card(scroll, s_row)
         s_row += 1
 
         ctk.CTkLabel(
-            card_lf, text="Locust file", font=ctk.CTkFont(size=15),
-            text_color=C_TEXT, anchor="w", width=self.LBL_W
+            card_lf,
+            text="File",
+            font=ctk.CTkFont(size=15),
+            text_color=C_LABEL,
+            anchor="w",
+            width=self.LBL_W
         ).grid(row=0, column=0, padx=(16, 8), pady=10, sticky="w")
 
-        p["locustfile_label"] = ctk.CTkLabel(
-            card_lf, text="", font=ctk.CTkFont(size=12),
-            text_color=C_TEXT, anchor="w",
+        self._locustfile_label = ctk.CTkLabel(
+            card_lf,
+            text="default: Locustfile_http.py",
+            font=ctk.CTkFont(size=11),
+            text_color=C_MUTED,
+            anchor="w"
         )
-        p["locustfile_label"].grid(row=0, column=1, padx=(0, 8), pady=10, sticky="ew")
-        ctk.CTkButton(card_lf, text="Browse", width=80,
-                      fg_color=C_ENTRY, hover_color=C_HOVER,
-                      font=ctk.CTkFont(size=12), corner_radius=6,
-                      command=self._browse_locustfile
-                      ).grid(row=0, column=2, padx=(0, 8), pady=10)
-        ctk.CTkButton(card_lf, text="✖", width=36,
-                      fg_color=darken(C_DANGER, 10), hover_color=C_DANGER,
-                      font=ctk.CTkFont(size=12), corner_radius=6,
-                      command=self._clear_locustfile
-                      ).grid(row=0, column=3, padx=(0, 16), pady=10)
+        self._locustfile_label.grid(row=0, column=1, padx=(0, 8), pady=10, sticky="ew")
+
+        ctk.CTkButton(
+            card_lf,
+            text="Browse",
+            width=80,
+            fg_color=C_ENTRY,
+            hover_color=C_HOVER,
+            font=ctk.CTkFont(size=12),
+            corner_radius=6,
+            command=self._browse_locustfile
+        ).grid(row=0, column=2, padx=(0, 8), pady=10)
+
+        ctk.CTkButton(
+            card_lf,
+            text="✖",
+            width=36,
+            fg_color=darken(C_DANGER, 10),
+            hover_color=C_DANGER,
+            font=ctk.CTkFont(size=12),
+            corner_radius=6,
+            command=self._clear_locustfile
+        ).grid(row=0, column=3, padx=(0, 16), pady=10)
 
         # ── Actions  ────────────────────────────────
         bf = ctk.CTkFrame(outer, fg_color=C_CONTENT, height=48)
@@ -1474,19 +1515,32 @@ class LocustGUI(ctk.CTk):
         bf.grid_propagate(False)
         bf.grid_columnconfigure(0, weight=1)
 
-        p["runbtn"] = ctk.CTkButton(bf, text="▶ Start Test", width=150, height=32,
-                                    fg_color=C_SUCCESS, hover_color=darken(C_SUCCESS, 25),
-                                    font=ctk.CTkFont(size=12), corner_radius=6,
-                                    command=self.run_test
-                                    )
-        p["runbtn"].grid(row=0, column=1, padx=4, pady=8)
+        self.runbtn = ctk.CTkButton(
+            bf,
+            text="▶ Start Test",
+            width=150,
+            height=32,
+            fg_color=C_SUCCESS,
+            hover_color=darken(C_SUCCESS, 25),
+            font=ctk.CTkFont(size=12),
+            corner_radius=6,
+            command=self.run_test
+        )
+        self.runbtn.grid(row=0, column=1, padx=4, pady=8)
 
-        p["stopbtn"] = ctk.CTkButton(bf, text="■ Stop", width=150, height=32,
-                                     fg_color="#3a3a3a", hover_color=C_DANGER,
-                                     font=ctk.CTkFont(size=12), corner_radius=6,
-                                     state="disabled", command=self.stop_locust
-                                     )
-        p["stopbtn"].grid(row=0, column=2, padx=(4, 16), pady=8)
+        self.stopbtn = ctk.CTkButton(
+            bf,
+            text="■ Stop",
+            width=150,
+            height=32,
+            fg_color="#3a3a3a",
+            hover_color=C_DANGER,
+            font=ctk.CTkFont(size=12),
+            corner_radius=6,
+            state="disabled",
+            command=self.stop_locust
+        )
+        self.stopbtn.grid(row=0, column=2, padx=(4, 16), pady=8)
 
         return outer
     # ================================================================
@@ -1523,7 +1577,7 @@ class LocustGUI(ctk.CTk):
             fg_color="transparent", hover_color=C_HOVER,
             border_width=1, border_color=C_MUTED,
             font=ctk.CTkFont(size=11), corner_radius=6,
-            command=lambda: self._add_stage_row(tab)
+            command=lambda: self._add_stage_row()
         ).grid(row=1, column=0, padx=12, pady=(6, 4), sticky="ew")
 
         p["stages_total_lbl"] = ctk.CTkLabel(
@@ -1585,7 +1639,7 @@ class LocustGUI(ctk.CTk):
 
         p["locustfile_label"] = ctk.CTkLabel(
             card_lf,
-            text="default: Locustfile_tcp.py",
+            text="default: Locust_tcp.py",
             font=ctk.CTkFont(size=11),
             text_color=C_MUTED,
             anchor="w"
@@ -1756,43 +1810,79 @@ class LocustGUI(ctk.CTk):
     # ================================================================
 
     def _load_preset(self, name):
-        p = self._pages[self._active_page]
-
-        if "preset_btn_widgets" not in p:
-            return
-
-        for n, btn in p["preset_btn_widgets"].items():
-            btn.configure(
-                fg_color=C_ACTIVE if n == name else C_ENTRY,
-                text_color="white" if n == name else C_TEXT
-            )
-        p["stages"] = [dict(s) for s in STAGE_PRESETS[name]]
+        if self._active_page in self._pages and isinstance(self._pages.get(self._active_page), dict):
+            p = self._pages[self._active_page]
+            if "preset_btn_widgets" not in p:
+                return
+            for n, btn in p["preset_btn_widgets"].items():
+                btn.configure(
+                    fg_color=C_ACTIVE if n == name else C_ENTRY,
+                    text_color="white" if n == name else C_TEXT
+                )
+            p["stages"] = [dict(s) for s in STAGE_PRESETS[name]]
+        else:
+            for n, btn in self._preset_btns.items():
+                btn.configure(
+                    fg_color=C_ACTIVE if n == name else C_ENTRY,
+                    text_color="white" if n == name else C_TEXT
+                )
+            self._stages = [dict(s) for s in STAGE_PRESETS[name]]
         self._render_stage_rows()
 
-    def _add_stage_row(self, tab = None):
-        p = self._pages[self._active_page]
-        p["stages"] = self._get_stages()
-        last = p["stages"][-1] if p["stages"] else {"duration": 0, "users": 0, "spawn_rate": 2}
-        p["stages"].append({
-            "duration": last["duration"] + 60,
-            "users": last["users"] + 10,
-            "spawn_rate": last["spawn_rate"],
-        })
-        for btn in p["preset_btn_widgets"].values():
-            btn.configure(fg_color=C_ENTRY, text_color=C_TEXT)
-
-        self._render_stage_rows()
-
-    def _del_stage_row(self, idx):
-        p = self._pages[self._active_page]
-        if len(p["stages"]) > 1:
+    def _add_stage_row(self):
+        if self._active_page in self._pages and isinstance(self._pages.get(self._active_page), dict):
+            p = self._pages[self._active_page]
             p["stages"] = self._get_stages()
-            p["stages"].pop(idx)
+            last = p["stages"][-1] if p["stages"] else {"duration": 0, "users": 0, "spawn_rate": 2}
+            p["stages"].append({
+                "duration": last["duration"] + 60,
+                "users": last["users"] + 10,
+                "spawn_rate": last["spawn_rate"],
+            })
+            for btn in p["preset_btn_widgets"].values():
+                btn.configure(fg_color=C_ENTRY, text_color=C_TEXT)
+            self._render_stage_rows()
+        else:
+            self._stages = self._get_stages()
+            last = self._stages[-1] if self._stages else {"duration": 0, "users": 0, "spawn_rate": 2}
+            self._stages.append({
+                "duration": last["duration"] + 60,
+                "users": last["users"] + 10,
+                "spawn_rate": last["spawn_rate"],
+            })
+            for btn in self._preset_btns.values():
+                btn.configure(fg_color=C_ENTRY, text_color=C_TEXT)
             self._render_stage_rows()
 
+    def _del_stage_row(self, idx):
+        if self._active_page in self._pages and isinstance(self._pages.get(self._active_page), dict):
+            p = self._pages[self._active_page]
+            if len(p["stages"]) > 1:
+                p["stages"] = self._get_stages()
+                p["stages"].pop(idx)
+                self._render_stage_rows()
+        else:
+            self._stages = self._get_stages()
+            if len(self._stages) > 1:
+                self._stages.pop(idx)
+                self._render_stage_rows()
+
     def _render_stage_rows(self):
-        p = self._pages[self._active_page]
-        self._render_stage_rows_for(p)
+        if self._active_page in self._pages and isinstance(self._pages.get(self._active_page), dict):
+            p = self._pages[self._active_page]
+            self._render_stage_rows_for(p)
+        else:
+            p = {
+                "stages": self._stages,
+                "stages_frame": self._stages_frame,
+                "stage_rows": self._stage_rows,
+                "stages_total_lbl": self._stages_total_lbl,
+                "hdr_min_lbl": self._hdr_min_lbl,
+                "hdr_max_lbl": self._hdr_max_lbl,
+                "preset_btn_widgets": self._preset_btns,
+            }
+            self._render_stage_rows_for(p)
+            self._stage_rows = p["stage_rows"]
 
     def _render_stage_rows_for(self, p):
         simple_mode = self._active_page in ("TCP", "UDP") if self._active_page else "wait_mode" not in (
@@ -1802,8 +1892,6 @@ class LocustGUI(ctk.CTk):
             if int(w.grid_info().get("row", 0)) >= 1:
                 w.destroy()
         p["stage_rows"] = []
-
-
 
         def attach_highlight(entry, validate_fn):
             var = ctk.StringVar(value=entry.get())
@@ -1918,9 +2006,14 @@ class LocustGUI(ctk.CTk):
 
     def _get_stages(self):
         stages = []
-        p = self._pages[self._active_page]
+        if self._active_page in self._pages and isinstance(self._pages.get(self._active_page), dict):
+            p = self._pages[self._active_page]
+            stage_rows = p["stage_rows"]
+        else:
+            stage_rows = self._stage_rows
+
         simple_mode = self._active_page in ("TCP", "UDP")
-        for i, row in enumerate(p["stage_rows"]):
+        for i, row in enumerate(stage_rows):
             try:
                 stage: dict[str, Any] = {
                     "duration": int(row["duration"].get().strip() or 0),
@@ -1940,12 +2033,17 @@ class LocustGUI(ctk.CTk):
             except (ValueError, KeyError) as e:
                 print(f"[WARN] Stage row {i + 1} skipped: {e}")
         return stages
-
     def _update_stage_totals(self, p=None):
         if p is None:
             if self._active_page is None:
                 return
-            p = self._pages[self._active_page]
+            if self._active_page in self._pages and isinstance(self._pages.get(self._active_page), dict):
+                p = self._pages[self._active_page]
+            else:
+                p = {
+                    "stage_rows": self._stage_rows,
+                    "stages_total_lbl": self._stages_total_lbl,
+                }
         if "stage_rows" not in p or "stages_total_lbl" not in p:
             return
         try:
@@ -2251,13 +2349,21 @@ class LocustGUI(ctk.CTk):
         )
         if path:
             self._locustfile_paths[self._active_page] = path
-            self._pages[self._active_page]["locustfile_label"].configure(text=os.path.basename(path), text_color=C_TEXT)
-            self.write_log(f"✓ [{self._active_page}] Locustfile: {os.path.basename(path)}")
+            self._locustfile_label.configure(text=os.path.basename(path), text_color=C_TEXT)
+            self.write_log(f"✓ Locustfile: {os.path.basename(path)}")
 
     def _clear_locustfile(self):
         self.locustfile_path = None
-        self._pages[self._active_page]["locustfile_label"].configure(text="default: Locustfile_http.py", text_color=C_MUTED)
-        self.write_log("↩ Locustfile reset to default")
+        if self._active_page in self._pages and isinstance(self._pages.get(self._active_page), dict):
+            self._pages[self._active_page]["locustfile_label"].configure(
+                text="", text_color=C_MUTED
+            )
+        else:
+            self._locustfile_label.configure(
+                text="default: Locustfile_http.py", text_color=C_MUTED
+            )
+        if self._active_page in self._locustfile_paths:
+            del self._locustfile_paths[self._active_page]
 
     def _delete_data(self):
         deleted = []
@@ -2339,7 +2445,9 @@ class LocustGUI(ctk.CTk):
         outer = ctk.CTkFrame(parent, fg_color="transparent", corner_radius=0)
         outer.grid(row=0, column=0, sticky="nsew")
         outer.grid_columnconfigure(0, weight=1)
-        outer.grid_rowconfigure(2, weight=0)
+        outer.grid_rowconfigure(0, weight=0)
+        outer.grid_rowconfigure(1, weight=0)
+        outer.grid_rowconfigure(2, weight=1)
 
         toolbar = ctk.CTkFrame(outer, fg_color=C_CARD, corner_radius=0, height=44)
         toolbar.grid(row=0, column=0, sticky="ew", padx=0, pady=(0, 1))
@@ -3168,12 +3276,17 @@ class LocustGUI(ctk.CTk):
             self.write_log(f"✗ [{active}] No locustfile selected.")
             return
 
-        self._stop_requested = False  # reset before starting
+        self._stop_requested = False
         self._set_stop_enabled(True)
         threading.Thread(target=self._run_test_thread, daemon=True).start()
-        p = self._pages.get(self._active_page)
-        p["runbtn"].configure(state="disabled")
-        p["stopbtn"].configure(state="normal")
+
+        if self._active_page in self._pages and isinstance(self._pages.get(self._active_page), dict):
+            p = self._pages[self._active_page]
+            p["runbtn"].configure(state="disabled")
+            p["stopbtn"].configure(state="normal")
+        else:
+            self.runbtn.configure(state="disabled")
+            self.stopbtn.configure(state="normal")
 
     def _set_stop_enabled(self, enabled):
         p = self._pages.get(self._active_page)
@@ -3304,6 +3417,12 @@ class LocustGUI(ctk.CTk):
                 os.path.join(output_dir, "report_stats.csv"), index=False
             )
     def _run_test_thread(self):
+        locustfile = self._locustfile_paths.get(self._active_page)
+
+        if not locustfile or not os.path.isfile(locustfile):
+            self.write_log("✗ No locustfile selected. Use the Browse button to select one.")
+            return
+
         if not self._validate_fields():
             self._set_stop_enabled(False)
             return
@@ -3569,9 +3688,13 @@ class LocustGUI(ctk.CTk):
             self.write_log(f"⚠ Network monitor stop error: {e}")
 
         self._set_stop_enabled(False)
-        p = self._pages[self._active_page]
-        p["runbtn"].configure(state="normal")
-        p["stopbtn"].configure(state="disabled")
+        if self._active_page in self._pages and isinstance(self._pages.get(self._active_page), dict):
+            p = self._pages[self._active_page]
+            p["runbtn"].configure(state="normal")
+            p["stopbtn"].configure(state="disabled")
+        else:
+            self.runbtn.configure(state="normal")
+            self.stopbtn.configure(state="disabled")
 
     def _run_reachability(self, duration, interval, ipaddr = None):
         self._reach_stop_event.clear()

@@ -1591,6 +1591,9 @@ def create_pdf_report(stats_file, history_file, output_file,
         story.append(Paragraph(comment.replace("\n", "<br/>"), S["comment"]))
         story.append(Spacer(1, 14))
 
+    if test_type_meta not in ("TCP", "UDP"):
+        story.append(PageBreak())
+
     # ── PERFORMANCE OVERVIEW ──────────────────────────────────────
     story.append(ColorBand("  Performance Overview"))
     story.append(Spacer(1, 8))
@@ -1619,8 +1622,11 @@ def create_pdf_report(stats_file, history_file, output_file,
         [Paragraph("Avg Content Size",      S["label"]), Paragraph(f"{avg_size} B",     S["value"])],
     ], col_widths=[200, None]))
     story.append(Spacer(1, 14))
-    add_stages_table(story, S, BASE_DIR)
     story.append(PageBreak())
+    add_stages_table(story, S, BASE_DIR)
+    if test_type_meta not in ("TCP", "UDP"):
+        story.append(PageBreak())
+
     # ── Failures OVERVIEW ──────────────────────────────────────
     if include_failures and os.path.exists(FAILURES_FILE):
         fdf = pd.read_csv(FAILURES_FILE)
@@ -1673,6 +1679,8 @@ def create_pdf_report(stats_file, history_file, output_file,
 
             story.append(t)
             story.append(Spacer(1, 14))
+            if test_type_meta not in ("TCP", "UDP"):
+                story.append(PageBreak())
 
     # ── TOPOLOGY ─────────────────────────────────────────────────
     if os.path.exists(topology_output):
@@ -1686,6 +1694,8 @@ def create_pdf_report(stats_file, history_file, output_file,
             S["muted"]
         ))
         story.append(Spacer(1, 16))
+        if test_type_meta not in ("TCP", "UDP"):
+            story.append(PageBreak())
 
     # ── REACHABILITY  (pie chart + timeline) ──────────────────────
     if test_type_meta not in ("TCP", "UDP"):
