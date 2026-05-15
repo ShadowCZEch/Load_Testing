@@ -100,7 +100,7 @@ def run(
     csv_out = csv_prefix or os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "report")
 
     master_cmd = [
-        sys.executable, "-m", "locust",
+        "sudo", sys.executable, "-m", "locust",
         "-f", locust_file,
         "--master",
         "--headless",
@@ -115,7 +115,7 @@ def run(
     ]
 
     worker_cmd = [
-        sys.executable, "-m", "locust",
+        "sudo", sys.executable, "-m", "locust",
         "-f", locust_file,
         "--worker",
     ]
