@@ -5,8 +5,9 @@ import socket
 import ipaddress
 from urllib.parse import urlparse
 from Config_Load import Config_Load
-from Port_scanner import scan_ports_tcp, scan_ports_udp
+from Port_scanner import scan_ports_tcp
 import time
+import random
 
 def resolve_host(host_input):
     parsed = urlparse(host_input)
@@ -40,13 +41,8 @@ def scan(
             version=6 if ":" in host_ip else 4
         )
     else:
-        print("Starting UDP scan...")
-        return scan_ports_udp(
-            range_start=range_start or cfg.get("udp_range_start"),
-            range_end=range_end or cfg.get("udp_range_end"),
-            host_ip=host_ip,
-            version=6 if ":" in host_ip else 4
-        )
+        dst_port = random.randint(int(range_start), int(range_end) + 1)
+        return dst_port
 
 def run(
     host_ip=None,
@@ -100,7 +96,7 @@ def run(
     csv_out = csv_prefix or os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "report")
 
     master_cmd = [
-        "sudo", sys.executable, "-m", "locust",
+        "sudo", "-E", sys.executable, "-m", "locust",
         "-f", locust_file,
         "--master",
         "--headless",
@@ -115,7 +111,7 @@ def run(
     ]
 
     worker_cmd = [
-        "sudo", sys.executable, "-m", "locust",
+        "sudo", "-E", sys.executable, "-m", "locust",
         "-f", locust_file,
         "--worker",
     ]

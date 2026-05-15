@@ -5,28 +5,35 @@ import time
 import random
 from Packet_create import  udp_packet
 from locust import User, task, constant
-from gevent import sleep, monkey
+from gevent import sleep
 
-monkey.patch_all()
 
 TARGET_PORT = int(os.environ.get("TARGET_PORT", 0))
 
 _ip_pool = []
 pool_file = os.environ.get("IP_POOL_FILE")
 
-if pool_file and os.path.exists(pool_file):
-    with open(pool_file, "r") as f:
-        _ip_pool = [line.strip() for line in f if line.strip()]
+
+def _load_pool():
+    global _ip_pool
+    if _ip_pool:
+        return
+    pool_file = os.environ.get("IP_POOL_FILE")
+    print(f"[Locust] IP_POOL_FILE = {pool_file}")
+    if pool_file and os.path.exists(pool_file):
+        with open(pool_file, "r") as f:
+            _ip_pool = [line.strip() for line in f if line.strip()]
         print(f"[Locust] Loaded {len(_ip_pool)} source IPs.")
-else:
-    print("[Error] Soubor s IP pool nebyl nalezen!")
+    else:
+        print(f"[ERROR] Pool file not found: {pool_file}")
+
 
 class UserClass(User):
-
     wait_time = constant(0)
     source_ip = None
 
     def on_start(self):
+        _load_pool()
         if not _ip_pool:
             raise Exception("IP pool is empty — check IP_POOL_FILE")
         self.source_ip = random.choice(_ip_pool)
