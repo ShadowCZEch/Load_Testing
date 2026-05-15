@@ -4,29 +4,26 @@ import os
 import time
 import random
 from Packet_create import  udp_packet
-from locust import User, task, events, constant
+from locust import User, task, constant
 from gevent import sleep
 
 
 TARGET_PORT = int(os.environ.get("TARGET_PORT", 0))
 
 _ip_pool = []
+pool_file = os.environ.get("IP_POOL_FILE")
 
-@events.test_start.add_listener
-def on_test_start( **_kwargs):
-    global _ip_pool
-    pool_file = os.environ.get("IP_POOL_FILE")
-    if pool_file and os.path.exists(pool_file):
-        with open(pool_file, "r") as f:
-            _ip_pool = [line.strip() for line in f if line.strip()]
-            print(f"[Locust] Loaded {len(_ip_pool)} source IPs.")
-
-    else:
-        print("[Error] Soubor s IP pool nebyl nalezen!")
+if pool_file and os.path.exists(pool_file):
+    with open(pool_file, "r") as f:
+        _ip_pool = [line.strip() for line in f if line.strip()]
+        print(f"[Locust] Loaded {len(_ip_pool)} source IPs.")
+else:
+    print("[Error] Soubor s IP pool nebyl nalezen!")
 
 class UserClass(User):
 
     wait_time = constant(0)
+    source_ip = None
 
     def on_start(self):
         if not _ip_pool:
