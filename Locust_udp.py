@@ -5,8 +5,9 @@ import time
 import random
 from Packet_create import  udp_packet
 from locust import User, task, constant
-from gevent import sleep
+from gevent import sleep, monkey
 
+monkey.patch_all()
 
 TARGET_PORT = int(os.environ.get("TARGET_PORT", 0))
 
