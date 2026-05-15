@@ -1585,7 +1585,7 @@ class LocustGUI(ctk.CTk):
 
         p["locustfile_label"] = ctk.CTkLabel(
             card_lf,
-            text="default: Locustfile_http.py",
+            text="default: Locustfile_tcp.py",
             font=ctk.CTkFont(size=11),
             text_color=C_MUTED,
             anchor="w"
