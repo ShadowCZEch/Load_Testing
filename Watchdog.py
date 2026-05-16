@@ -56,6 +56,7 @@ def one_ping(ipaddr,timeout, iface = None):
     try:
         if iface:
             conf.iface = iface
+            print(f"[Reachability] Using interface: {iface}")
         ip_ver = ipaddress.ip_address(ipaddr)
         if ip_ver.version == 4:
             pkt = IP(dst=ipaddr) / ICMP()
