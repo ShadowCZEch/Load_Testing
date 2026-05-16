@@ -58,6 +58,7 @@ def run(
     port=None,
     on_master_start=None,
     csv_prefix=None,
+    iface=None
 ):
     cfg = Config_Load()
     host_ip = resolve_host(host_ip or cfg.get("ipaddr"))
@@ -66,9 +67,11 @@ def run(
     users = users or cfg.get("unique_users_count")
     spawn_rate = spawn_rate or cfg.get("spawn_rate")
     run_time = run_time or cfg.get("time_total")
-    iface = cfg.get("interface")
+    iface = iface or cfg.get("interface")
+    print(f"[DEBUG] iface from config = {repr(iface)}")
+    print(f"[DEBUG] full config = {cfg._config}")
     if not iface:
-        raise ValueError("monitor_interface not set in config. Select an interface in the GUI.")
+        raise ValueError("interface not set in config. Select an interface in the GUI.")
 
 
 

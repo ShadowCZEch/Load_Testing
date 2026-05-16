@@ -1804,6 +1804,7 @@ class LocustGUI(ctk.CTk):
             "range_end": range_end,
             "ip_pool_file": os.path.join(os.getcwd(), "ip_pool.txt"),
             "stages": self._get_stages(),
+            "iface": self.entries["interface"].get().strip(),
         }
 
     # ================================================================
@@ -3709,7 +3710,7 @@ class LocustGUI(ctk.CTk):
                     poll_interval=float(self.get("reach_interval") or 1.0),
                     duration=duration,
                     output_dir=DATA_DIR,
-                    iface = self.get("monitor_interface")
+                    iface=self.get("reach_interface") or self.get("interface")
                 )
             elif self._active_page == "HTTP":
                 reach_interface = self.get("reach_interface") or self.get("interface")
