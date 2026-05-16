@@ -1,13 +1,7 @@
 from datetime import datetime
-import socket
 import csv
 import time
 from pathlib import Path
-from scapy.error import Scapy_Exception
-from scapy.layers.inet import IP, ICMP
-from scapy.layers.inet6 import IPv6, ICMPv6EchoRequest
-from scapy.all import conf, sr1
-import ipaddress
 from Config_Load import Config_Load
 
 # ================================================================
@@ -53,18 +47,14 @@ def _write_summary(path: Path, session_start: str, stats: dict,
 # ================================================================
 def one_ping(ipaddr, timeout, iface=None):
     try:
+        import subprocess
+        cmd = ["ping", "-c", "1", "-W", str(int(timeout))]
         if iface:
-            conf.iface = iface
-        ip_ver = ipaddress.ip_address(ipaddr)
-        if ip_ver.version == 4:
-            pkt = IP(dst=ipaddr) / ICMP()
-        elif ip_ver.version == 6:
-            pkt = IPv6(dst=ipaddr) / ICMPv6EchoRequest()
-        else:
-            raise ValueError("Invalid IP address.")
-        reply = sr1(pkt, timeout=timeout, verbose=False)
-        return reply is not None
-    except (ValueError, Scapy_Exception, OSError, socket.error):
+            cmd += ["-I", iface]
+        cmd.append(ipaddr)
+        result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return result.returncode == 0
+    except Exception:
         return False
 
 def Watchdog(ipaddr=None, poll_interval=None, duration=None,
