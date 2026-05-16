@@ -43,6 +43,7 @@ from Network_monitor import NetworkMonitor
 from Watchdog import Watchdog
 
 DATA_DIR   = os.path.join(BASE_DIR, "data")
+os.makedirs(DATA_DIR, exist_ok=True)
 REPORT_DIR = os.path.join(BASE_DIR, "report")
 
 # ── Themes ─────────────────────────────────────────────────────────
