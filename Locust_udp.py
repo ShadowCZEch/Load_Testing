@@ -1,4 +1,4 @@
-# locustfile_udp.py
+# Locust_udp.py
 
 import os
 import time
@@ -11,7 +11,6 @@ from gevent import sleep
 TARGET_PORT = int(os.environ.get("TARGET_PORT", 0))
 
 _ip_pool = []
-pool_file = os.environ.get("IP_POOL_FILE")
 
 
 def _load_pool():

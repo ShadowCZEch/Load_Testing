@@ -34,7 +34,8 @@ class NetworkMonitor:
         # verifikácia cez /sys/class/net (rýchlejšie, presnejšie).
         return os.path.exists(f"/sys/class/net/{self.interface}")
 
-    def list_interfaces(self):
+    @staticmethod
+    def list_interfaces():
         """Vráti zoznam všetkých dostupných sieťových rozhraní."""
         interfaces = []
         try:

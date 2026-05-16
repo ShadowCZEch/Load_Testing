@@ -141,7 +141,7 @@ def run(
     except KeyboardInterrupt:
         print("\nStopping Locust...")
     finally:
-        print("\n--- Čištění systému (Cleanup) ---")
+        print("\n--- System cleanup running ---")
         try:
             for p in processes:
                 if p.poll() is None:
@@ -158,9 +158,9 @@ def run(
                                     os.chown(os.path.join(root, d), uid, gid)
                                 for f in files:
                                     os.chown(os.path.join(root, f), uid, gid)
-            print("[OK] Všechny virtuální IP byly odstraněny.")
+            print("[OK] All IPs successfully removed.")
         except Exception as e:
-            print(f"[WARN] Cleanup narazil na problém: {e}")
+            print(f"[WARN] Encountered issue during cleanup: {e}")
 
 if __name__ == "__main__":
     run()
