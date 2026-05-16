@@ -66,7 +66,7 @@ def run(
     users = users or cfg.get("unique_users_count")
     spawn_rate = spawn_rate or cfg.get("spawn_rate")
     run_time = run_time or cfg.get("time_total")
-    iface = cfg.get("monitor_interface")
+    iface = cfg.get("interface")
     if not iface:
         raise ValueError("monitor_interface not set in config. Select an interface in the GUI.")
 
