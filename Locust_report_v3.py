@@ -1599,7 +1599,19 @@ def create_pdf_report(stats_file, history_file, output_file,
     story.append(Spacer(1, 8))
 
     request_threshold_pct = round(request_threshold * 100, 1)
-    is_stable     = failure_rate <= request_threshold_pct
+
+    wd_df, wd_stats, wd_changes = None, None, None
+
+    if test_type_meta in ("TCP", "UDP"):
+        wd_df, wd_stats, wd_changes = load_watchdog_reachability(reach_file)
+        if wd_stats is not None:
+            pct_down = float(wd_stats["pct_down"])
+            is_stable = pct_down <= reach_threshold
+        else:
+            is_stable = True
+    else:
+        is_stable = failure_rate <= request_threshold_pct
+
     stable_text   = "Stable" if is_stable else "Unstable"
     stable_color  = C_ACCENT if is_stable else C_DANGER
 
@@ -1809,7 +1821,6 @@ def create_pdf_report(stats_file, history_file, output_file,
 
     # ── TCP/UDP Watchdog reachability ─────────────────────────
     if test_type_meta in ("TCP", "UDP"):
-        wd_df, wd_stats, wd_changes = load_watchdog_reachability(reach_file)
 
         if wd_df is not None and wd_stats is not None:
             story.append(ColorBand("  Reachability (Watchdog)"))

@@ -111,7 +111,7 @@ def Watchdog(ipaddr=None, poll_interval=None, duration=None,
     last_state = None
 
     print(f"Running server monitoring on {ipaddr}, probing every {poll_interval}s.")
-
+    session_start_time = time.time()
     try:
         while True:
             start_time = time.time()
@@ -139,7 +139,7 @@ def Watchdog(ipaddr=None, poll_interval=None, duration=None,
             elapsed = time.time() - start_time
             sleep_time = max(0.0, float(poll_interval - elapsed))
             time.sleep(sleep_time)
-            if duration is not None and (time.time() - start_time) >= float(duration):
+            if duration is not None and (time.time() - session_start_time) >= float(duration):
                 print("\nMonitoring duration reached, stopping.")
                 break
     except KeyboardInterrupt:
