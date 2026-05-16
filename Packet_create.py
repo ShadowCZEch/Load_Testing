@@ -19,7 +19,7 @@ _udp_payload = os.urandom(_udp_payload_len) if _udp_payload_len > 0 else b""
 _tcp_payload = os.urandom(_tcp_payload_len) if _tcp_payload_len > 0 else b""
 
 _iface = os.environ.get("IFACE", "eth0")
-print(f"[Packet_create] Using interface: {_iface}")
+print(f"[Packet_create] IFACE env = {os.environ.get('IFACE')}, using = {_iface}")
 _socket = L3RawSocket(iface=_iface)
 
 

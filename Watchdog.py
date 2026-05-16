@@ -6,10 +6,10 @@ from pathlib import Path
 from scapy.error import Scapy_Exception
 from scapy.layers.inet import IP, ICMP
 from scapy.layers.inet6 import IPv6, ICMPv6EchoRequest
-from scapy.sendrecv import sr1
+from scapy.sendrecv import srp1
 import ipaddress
 from Config_Load import Config_Load
-from scapy.all import conf
+from scapy.layers.l2 import Ether
 
 # ================================================================
 # CSV generation header
@@ -52,19 +52,16 @@ def _write_summary(path: Path, session_start: str, stats: dict,
 # ================================================================
 # Reachability tools
 # ================================================================
-def one_ping(ipaddr,timeout, iface = None):
+def one_ping(ipaddr, timeout, iface=None):
     try:
-        if iface:
-            conf.iface = iface
-            print(f"[Reachability] Using interface: {iface}")
         ip_ver = ipaddress.ip_address(ipaddr)
         if ip_ver.version == 4:
-            pkt = IP(dst=ipaddr) / ICMP()
+            pkt = Ether() / IP(dst=ipaddr) / ICMP()
         elif ip_ver.version == 6:
-            pkt = IPv6(dst=ipaddr) / ICMPv6EchoRequest()
+            pkt = Ether() / IPv6(dst=ipaddr) / ICMPv6EchoRequest()
         else:
             raise ValueError("Invalid IP address.")
-        reply = sr1(pkt, timeout=timeout, verbose=False, iface=iface) if iface else sr1(pkt, timeout=timeout, verbose=False)
+        reply = srp1(pkt, timeout=timeout, verbose=False, iface=iface) if iface else srp1(pkt, timeout=timeout, verbose=False)
         return reply is not None
     except (ValueError, Scapy_Exception, OSError, socket.error):
         return False

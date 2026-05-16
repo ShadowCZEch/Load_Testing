@@ -113,7 +113,7 @@ def run(
     ]
 
     worker_cmd = [
-        "sudo", "-E", sys.executable, "-m", "locust",
+        "sudo", f"IFACE={iface}", sys.executable, "-m", "locust",
         "-f", locust_file,
         "--worker",
     ]
