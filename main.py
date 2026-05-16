@@ -69,7 +69,6 @@ def run(
     run_time = run_time or cfg.get("time_total")
     iface = iface or cfg.get("interface")
     print(f"[DEBUG] iface from config = {repr(iface)}")
-    print(f"[DEBUG] full config = {cfg._config}")
     if not iface:
         raise ValueError("interface not set in config. Select an interface in the GUI.")
 
