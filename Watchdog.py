@@ -64,7 +64,7 @@ def one_ping(ipaddr,timeout, iface = None):
             pkt = IPv6(dst=ipaddr) / ICMPv6EchoRequest()
         else:
             raise ValueError("Invalid IP address.")
-        reply = sr1(pkt, timeout=timeout, verbose=False)
+        reply = sr1(pkt, timeout=timeout, verbose=False, iface=iface) if iface else sr1(pkt, timeout=timeout, verbose=False)
         return reply is not None
     except (ValueError, Scapy_Exception, OSError, socket.error):
         return False
