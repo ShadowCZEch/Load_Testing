@@ -3433,6 +3433,7 @@ class LocustGUI(ctk.CTk):
         # ================================================================
 
         if self._active_page in ("TCP", "UDP"):
+            self._save_env_from_gui()
             params = self._collect_run_params()
             stages: list[dict[str, Any]] = params.pop("stages")
             total_run_time = sum(int(str(s["duration"])) for s in stages)
