@@ -98,7 +98,14 @@ def run(
     csv_out = csv_prefix or os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "report")
 
     master_cmd = [
-        "sudo", "-E", sys.executable, "-m", "locust",
+        "sudo",
+        f"IFACE={iface}",
+        f"IP_POOL_FILE={pool_file}",
+        f"TARGET_HOST={host_ip}",
+        f"TARGET_PORT={port}",
+        f"PACKET_SIZE={packet_size or cfg.get('packet_size') or 60}",
+        f"LOCUST_MODE={protocol}",
+        f"PYTHONPATH={os.getcwd()}", sys.executable, "-m", "locust",
         "-f", locust_file,
         "--master",
         "--headless",
@@ -113,7 +120,17 @@ def run(
     ]
 
     worker_cmd = [
-        "sudo", f"IFACE={iface}", sys.executable, "-m", "locust",
+        "sudo",
+        f"IFACE={iface}",
+        f"IP_POOL_FILE={pool_file}",
+        f"TARGET_HOST={host_ip}",
+        f"TARGET_PORT={port}",
+        f"PACKET_SIZE={packet_size or cfg.get('packet_size') or 60}",
+        f"LOCUST_MODE={protocol}",
+        f"PYTHONPATH={os.getcwd()}",
+        sys.executable,
+        "-m",
+        "locust",
         "-f", locust_file,
         "--worker",
     ]
