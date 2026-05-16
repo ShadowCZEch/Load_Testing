@@ -25,7 +25,7 @@ def udp_packet(dst_port,src_ip=None):
 
     sport = random.randint(1,65535)
 
-    pkt = pkt = IP(dst=TARGET_HOST, src=src_ip, len=PACKET_SIZE, chksum=0) / \
+    pkt = IP(dst=TARGET_HOST, src=src_ip, len=PACKET_SIZE, chksum=0) / \
           UDP(sport=sport, dport=dst_port, chksum=0) / \
           Raw(load=_udp_payload)
     _socket.send(pkt)
@@ -33,7 +33,6 @@ def udp_packet(dst_port,src_ip=None):
 def tcp_packet(dst_port, src_ip=None):
     sport = random.randint(1,65535)
 
-    tcp_layer = TCP(sport=sport, dport=dst_port, flags="S")
     pkt = IP(dst=TARGET_HOST, src=src_ip, len=PACKET_SIZE, chksum=0) / \
           TCP(sport=sport, dport=dst_port, flags="S", chksum=0) / \
           Raw(load=_tcp_payload)
