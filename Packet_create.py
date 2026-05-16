@@ -1,7 +1,7 @@
 
 import random
 from scapy.layers.inet import IP,UDP,TCP
-from scapy.all import Raw,send
+from scapy.all import Raw
 from scapy.supersocket import L3RawSocket
 import os
 
