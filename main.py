@@ -41,7 +41,7 @@ def scan(
             version=6 if ":" in host_ip else 4
         )
     else:
-        dst_port = random.randint(int(range_start), int(range_end) + 1)
+        dst_port = random.randint(int(range_start), int(range_end))
         return dst_port
 
 def run(
