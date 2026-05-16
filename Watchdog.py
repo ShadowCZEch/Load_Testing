@@ -8,6 +8,8 @@ from scapy.layers.inet import IP, ICMP
 from scapy.layers.inet6 import IPv6, ICMPv6EchoRequest
 from scapy.sendrecv import sr1
 import ipaddress
+from Config_Load import Config_Load
+from scapy.all import conf
 
 # ================================================================
 # CSV generation header
@@ -50,22 +52,26 @@ def _write_summary(path: Path, session_start: str, stats: dict,
 # ================================================================
 # Reachability tools
 # ================================================================
-def one_ping(ipaddr,timeout):
+def one_ping(ipaddr,timeout, iface = None):
     try:
+        if iface:
+            conf.iface = iface
         ip_ver = ipaddress.ip_address(ipaddr)
         if ip_ver.version == 4:
-            pkt = IP(dst=ipaddr)/ICMP()
+            pkt = IP(dst=ipaddr) / ICMP()
         elif ip_ver.version == 6:
-            pkt = IPv6(dst=ipaddr)/ICMPv6EchoRequest()
+            pkt = IPv6(dst=ipaddr) / ICMPv6EchoRequest()
         else:
             raise ValueError("Invalid IP address.")
-        reply = sr1(pkt, timeout=timeout,verbose=False)
+        reply = sr1(pkt, timeout=timeout, verbose=False)
         return reply is not None
     except (ValueError, Scapy_Exception, OSError, socket.error):
         return False
 
 def Watchdog(ipaddr=None, poll_interval=None, duration=None,
-             output_dir: str = "data", append: bool = True):
+             output_dir: str = "data", append: bool = True, iface=None):
+    cfg = Config_Load()
+    iface = iface or cfg.get("monitor_interface") or "eth0"
 
     if not poll_interval:
         raise ValueError("poll_interval must be provided.")
@@ -112,7 +118,7 @@ def Watchdog(ipaddr=None, poll_interval=None, duration=None,
         while True:
             start_time = time.time()
             timestamp = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
-            up = one_ping(ipaddr,timeout)
+            up = one_ping(ipaddr,timeout, iface=iface)
             status = "up" if up else "down"
 
             _append_csv(reachability_csv, [timestamp, status])

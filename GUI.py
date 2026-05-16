@@ -3707,7 +3707,8 @@ class LocustGUI(ctk.CTk):
                     ipaddr=ipaddr,
                     poll_interval=float(self.get("reach_interval") or 1.0),
                     duration=duration,
-                    output_dir=DATA_DIR
+                    output_dir=DATA_DIR,
+                    iface = self.get("monitor_interface")
                 )
             elif self._active_page == "HTTP":
                 reach_interface = self.get("reach_interface") or self.get("interface")

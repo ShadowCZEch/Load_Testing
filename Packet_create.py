@@ -18,7 +18,8 @@ _tcp_payload_len = max(0, PACKET_SIZE - (IP_BASE + TCP_BASE))
 _udp_payload = os.urandom(_udp_payload_len) if _udp_payload_len > 0 else b""
 _tcp_payload = os.urandom(_tcp_payload_len) if _tcp_payload_len > 0 else b""
 
-_socket = L3RawSocket()
+_iface = os.environ.get("IFACE", "eth0")
+_socket = L3RawSocket(iface=_iface)
 
 
 def udp_packet(dst_port,src_ip=None):

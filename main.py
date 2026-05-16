@@ -66,6 +66,7 @@ def run(
     users = users or cfg.get("unique_users_count")
     spawn_rate = spawn_rate or cfg.get("spawn_rate")
     run_time = run_time or cfg.get("time_total")
+    iface = cfg.get("monitor_interface") or os.getenv("INTERFACE", "eth0")
 
 
 
@@ -89,6 +90,7 @@ def run(
     env["TARGET_HOST"] = host_ip
     env["PYTHONPATH"] = os.getcwd()
     env["IP_POOL_FILE"] = pool_file
+    env["IFACE"] = iface
 
     locust_file = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                "Locust_tcp.py" if protocol == "tcp" else "Locust_udp.py")
