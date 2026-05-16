@@ -1,8 +1,13 @@
 from datetime import datetime
+import socket
 import csv
 import time
 from pathlib import Path
-from Config_Load import Config_Load
+from scapy.error import Scapy_Exception
+from scapy.layers.inet import IP, ICMP
+from scapy.layers.inet6 import IPv6, ICMPv6EchoRequest
+from scapy.sendrecv import sr1
+import ipaddress
 
 # ================================================================
 # CSV generation header
@@ -45,22 +50,22 @@ def _write_summary(path: Path, session_start: str, stats: dict,
 # ================================================================
 # Reachability tools
 # ================================================================
-def one_ping(ipaddr, timeout, iface=None):
+def one_ping(ipaddr,timeout):
     try:
-        import subprocess
-        cmd = ["ping", "-c", "1", "-W", str(int(timeout))]
-        if iface:
-            cmd += ["-I", iface]
-        cmd.append(ipaddr)
-        result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return result.returncode == 0
-    except Exception:
+        ip_ver = ipaddress.ip_address(ipaddr)
+        if ip_ver.version == 4:
+            pkt = IP(dst=ipaddr)/ICMP()
+        elif ip_ver.version == 6:
+            pkt = IPv6(dst=ipaddr)/ICMPv6EchoRequest()
+        else:
+            raise ValueError("Invalid IP address.")
+        reply = sr1(pkt, timeout=timeout,verbose=False)
+        return reply is not None
+    except (ValueError, Scapy_Exception, OSError, socket.error):
         return False
 
 def Watchdog(ipaddr=None, poll_interval=None, duration=None,
-             output_dir: str = "data", append: bool = True, iface=None):
-    cfg = Config_Load()
-    iface = iface or cfg.get("monitor_interface") or "eth0"
+             output_dir: str = "data", append: bool = True):
 
     if not poll_interval:
         raise ValueError("poll_interval must be provided.")
@@ -102,12 +107,12 @@ def Watchdog(ipaddr=None, poll_interval=None, duration=None,
     last_state = None
 
     print(f"Running server monitoring on {ipaddr}, probing every {poll_interval}s.")
-    session_start_time = time.time()
+
     try:
         while True:
             start_time = time.time()
             timestamp = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
-            up = one_ping(ipaddr,timeout, iface=iface)
+            up = one_ping(ipaddr,timeout)
             status = "up" if up else "down"
 
             _append_csv(reachability_csv, [timestamp, status])
@@ -130,7 +135,7 @@ def Watchdog(ipaddr=None, poll_interval=None, duration=None,
             elapsed = time.time() - start_time
             sleep_time = max(0.0, float(poll_interval - elapsed))
             time.sleep(sleep_time)
-            if duration is not None and (time.time() - session_start_time) >= float(duration):
+            if duration is not None and (time.time() - start_time) >= float(duration):
                 print("\nMonitoring duration reached, stopping.")
                 break
     except KeyboardInterrupt:
