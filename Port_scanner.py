@@ -1,7 +1,6 @@
 
-
 from scapy.error import Scapy_Exception
-
+from scapy.all import send
 from Config_Load import config_load
 import random
 from scapy.layers.inet import IP,TCP,sr1
@@ -16,7 +15,7 @@ def syn_scan(target_ip,version, port, timeout=0.5):
 
     if resp and resp.haslayer(TCP) and resp[TCP].flags == 0x12:
         rst = IP(dst=target_ip)/TCP(dport=port,flags="R")
-        sr1(rst,timeout=timeout,verbose=False)
+        send(rst, verbose=False)
         return True
     return False
 
