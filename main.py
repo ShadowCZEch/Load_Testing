@@ -66,7 +66,9 @@ def run(
     users = users or cfg.get("unique_users_count")
     spawn_rate = spawn_rate or cfg.get("spawn_rate")
     run_time = run_time or cfg.get("time_total")
-    iface = cfg.get("monitor_interface") or os.getenv("INTERFACE", "eth0")
+    iface = cfg.get("monitor_interface")
+    if not iface:
+        raise ValueError("monitor_interface not set in config. Select an interface in the GUI.")
 
 
 
@@ -139,7 +141,7 @@ def run(
 
     try:
         print(f"Running Locust on {host}...")
-        master_proc = subprocess.Popen(master_cmd, env=env)
+        master_proc = subprocess.Popen(master_cmd)
         processes.append(master_proc)
 
         if on_master_start:
@@ -151,7 +153,7 @@ def run(
         for i in range(worker_count):
             w_env = env.copy()
             w_env["LOCUST_WORKER_ID"] = str(i)
-            w_proc = subprocess.Popen(worker_cmd, env=w_env)
+            w_proc = subprocess.Popen(worker_cmd)
             processes.append(w_proc)
 
         master_proc.wait()

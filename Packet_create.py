@@ -18,10 +18,17 @@ _tcp_payload_len = max(0, PACKET_SIZE - (IP_BASE + TCP_BASE))
 _udp_payload = os.urandom(_udp_payload_len) if _udp_payload_len > 0 else b""
 _tcp_payload = os.urandom(_tcp_payload_len) if _tcp_payload_len > 0 else b""
 
-_iface = os.environ.get("IFACE", "eth0")
-print(f"[Packet_create] IFACE env = {os.environ.get('IFACE')}, using = {_iface}")
-_socket = L3RawSocket(iface=_iface)
+_socket = None
 
+def _get_socket():
+    global _socket
+    if _socket is None:
+        _iface = os.environ.get("IFACE")
+        if not _iface:
+            raise RuntimeError("IFACE environment variable not set. Cannot create socket.")
+        print(f"[Packet_create] Using interface: {_iface}")
+        _socket = L3RawSocket(iface=_iface)
+    return _socket
 
 def udp_packet(dst_port,src_ip=None):
 
@@ -30,7 +37,7 @@ def udp_packet(dst_port,src_ip=None):
     pkt = IP(dst=TARGET_HOST, src=src_ip, len=PACKET_SIZE, chksum=0) / \
           UDP(sport=sport, dport=dst_port, chksum=0) / \
           Raw(load=_udp_payload)
-    _socket.send(pkt)
+    _get_socket().send(pkt)
 
 def tcp_packet(dst_port, src_ip=None):
     sport = random.randint(1,65535)
@@ -38,5 +45,5 @@ def tcp_packet(dst_port, src_ip=None):
     pkt = IP(dst=TARGET_HOST, src=src_ip, len=PACKET_SIZE, chksum=0) / \
           TCP(sport=sport, dport=dst_port, flags="S", chksum=0) / \
           Raw(load=_tcp_payload)
-    _socket.send(pkt)
+    _get_socket().send(pkt)
 
