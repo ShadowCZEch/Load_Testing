@@ -113,6 +113,7 @@ def run(
         f"TARGET_HOST={host_ip}",
         f"TARGET_PORT={port}",
         f"PACKET_SIZE={packet_size or cfg.get('packet_size') or 60}",
+        f"TARGET_RPS={target_rps or 0}"
         f"LOCUST_MODE={protocol}",
         f"PYTHONPATH={os.getcwd()}", sys.executable, "-m", "locust",
         "-f", locust_file,
@@ -136,6 +137,7 @@ def run(
         f"TARGET_HOST={host_ip}",
         f"TARGET_PORT={port}",
         f"PACKET_SIZE={packet_size or cfg.get('packet_size') or 60}",
+        f"TARGET_RPS={target_rps or 0}"
         f"LOCUST_MODE={protocol}",
         f"PYTHONPATH={os.getcwd()}",
         sys.executable,
@@ -149,7 +151,7 @@ def run(
 
     try:
         print(f"Running Locust on {host}...")
-        master_proc = subprocess.Popen(master_cmd, env = env)
+        master_proc = subprocess.Popen(master_cmd)
         processes.append(master_proc)
 
         if on_master_start:
@@ -161,7 +163,7 @@ def run(
         for i in range(worker_count):
             w_env = env.copy()
             w_env["LOCUST_WORKER_ID"] = str(i)
-            w_proc = subprocess.Popen(worker_cmd, env=env)
+            w_proc = subprocess.Popen(worker_cmd)
             processes.append(w_proc)
 
         master_proc.wait()
