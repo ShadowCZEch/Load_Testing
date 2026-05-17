@@ -1633,6 +1633,15 @@ def create_pdf_report(stats_file, history_file, output_file,
         [Paragraph("Failures/s",            S["label"]), Paragraph(str(fails_s),        S["value"])],
         [Paragraph("Avg Content Size",      S["label"]), Paragraph(f"{avg_size} B",     S["value"])],
     ], col_widths=[200, None]))
+    if test_type_meta in ("TCP", "UDP"):
+        story.append(Paragraph(
+            "Failure rate reflects individual packet-level failures — each packet sent "
+            "during server downtime is counted as a failure. This differs from the Watchdog "
+            "reachability percentage which measures probe-level availability at fixed intervals.",
+            ParagraphStyle("perf_note", fontSize=8, textColor=C_TEXT_MUTED, alignment=TA_CENTER,
+                           leading=11, spaceBefore=2)
+        ))
+
     story.append(Spacer(1, 14))
     story.append(PageBreak())
     add_stages_table(story, S, BASE_DIR)
@@ -1848,6 +1857,15 @@ def create_pdf_report(stats_file, history_file, output_file,
             p_wd_pie = os.path.join(REPORT_DIR, "watchdog_pie.png")
             save_chart(p_wd_pie, dpi=220)
             story.append(Image(p_wd_pie, width=280, height=220))
+            story.append(Image(p_wd_pie, width=280, height=220))
+            story.append(Spacer(1, 4))
+            story.append(Paragraph(
+                "Availability is measured by ICMP probes sent at regular intervals. "
+                "Each probe interval is counted as either up or down, independent of flood traffic volume. "
+                "This metric reflects server reachability, not individual packet success rate.",
+                ParagraphStyle("wd_note", fontSize=8, textColor=C_TEXT_MUTED, alignment=TA_CENTER,
+                               leading=11, spaceBefore=2)
+            ))
             story.append(Spacer(1, 8))
             # ── Summary table ──────────────────────────────────
             story.append(make_info_table([
