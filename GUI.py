@@ -1059,9 +1059,12 @@ class LocustGUI(ctk.CTk):
                 help="Network interface used to send outgoing requests.\nMust match the interface where the IP pool will be assigned.")
         self._field_row(card, 0, "Test type",    "test_type", "Load Test", col=2,
                         help="Label describing the test scenario.\nAppears in the generated PDF report header.")
-        self._field_row(card, 1, "Source ports", "src_ports", "",          col=2,
+        self._field_row(card, 1, "Port range", "src_ports", "", col=2,
                         ph="e.g. 1024-65535",
-                        help="Source port range for outgoing connections.\nFormats: single (8080), range (1024-65535), list (8080,8081,8082).\nLeave empty to let the OS assign ports automatically.")
+                        help="HTTP: Source port range for outgoing connections.\n"
+                             "TCP/UDP: Target port range to scan for open ports.\n"
+                             "Formats: single (8080), range (1024-65535), list (8080,8081,8082).\n"
+                             "Leave empty for defaults.")
         self._field_row(card, 2, "Request failure threshold (%)", "request_threshold", "1", col=2,
                         help="Maximum allowed percentage of failed Locust HTTP requests.\nExample: 1 means the load test is considered unstable if more than 1% of requests fail.")
 
@@ -1621,8 +1624,12 @@ class LocustGUI(ctk.CTk):
 
         self._field_row(card, 0, "Stop timeout (s)", "tcp_stop_timeout", "60", col=0, help="...")
         self._field_row(card, 0, "Processes", "tcp_processes", "-1", col=2, help="...")
+        self._field_row(card, 1, "SYN-ACK timeout (s)", "tcp_synack_timeout", "5", col=0,
+                        help="How long to wait for a SYN-ACK response before marking requests as failed."
+                             "\nIf no SYN-ACK is received from the target within this window, Locust reports failures.")
         self._setup_process_field_highlight("tcp_processes")
         self._setup_positive_field_highlight("tcp_stop_timeout")
+        self._setup_positive_field_highlight("tcp_synack_timeout")
 
         # ── Locustfile ────────────────────────────────────────────
         s_row = self._card_header(scroll, "Locustfile", s_row)
@@ -1805,6 +1812,8 @@ class LocustGUI(ctk.CTk):
             "ip_pool_file": os.path.join(os.getcwd(), "ip_pool.txt"),
             "stages": self._get_stages(),
             "iface": self.entries["interface"].get().strip(),
+            "synack_timeout": self.entries.get("tcp_synack_timeout", None) and self.entries[
+                "tcp_synack_timeout"].get().strip(),
         }
 
     # ================================================================
