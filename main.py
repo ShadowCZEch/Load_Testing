@@ -59,7 +59,8 @@ def run(
     on_master_start=None,
     csv_prefix=None,
     iface=None,
-    synack_timeout=None
+    synack_timeout=None,
+    stop_timeout=None,
 ):
     cfg = Config_Load()
     host_ip = resolve_host(host_ip or cfg.get("ipaddr"))
@@ -72,7 +73,7 @@ def run(
     print(f"[DEBUG] iface from config = {repr(iface)}")
     if not iface:
         raise ValueError("interface not set in config. Select an interface in the GUI.")
-
+    stop_timeout = str(stop_timeout or cfg.get("stop_timeout") or 60)
 
 
     pool_file = ip_pool_file or os.path.join(os.getcwd(), "ip_pool.txt")
@@ -112,12 +113,15 @@ def run(
         f"PACKET_SIZE={packet_size or cfg.get('packet_size') or 60}",
         f"LOCUST_MODE={protocol}",
         f"PYTHONPATH={os.getcwd()}", sys.executable, "-m", "locust",
+        f"SYNACK_TIMEOUT={synack_timeout or cfg.get('synack_timeout') or 5}",
         "-f", locust_file,
         "--master",
         "--headless",
         "--csv", csv_out,
         "-u", str(users),
+        "--stop-timeout", stop_timeout,
         "-r", str(spawn_rate),
+        "--stop-timeout", stop_timeout,
         "--run-time", f"{run_time}s",
         "--expect-workers", str(worker_count),
         "--html", os.path.join(os.path.dirname(os.path.abspath(__file__)), "report.html"),
@@ -134,6 +138,7 @@ def run(
         f"PACKET_SIZE={packet_size or cfg.get('packet_size') or 60}",
         f"LOCUST_MODE={protocol}",
         f"PYTHONPATH={os.getcwd()}",
+        f"SYNACK_TIMEOUT={synack_timeout or cfg.get('synack_timeout') or 5}",
         sys.executable,
         "-m",
         "locust",

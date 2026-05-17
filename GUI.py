@@ -1814,6 +1814,8 @@ class LocustGUI(ctk.CTk):
             "iface": self.entries["interface"].get().strip(),
             "synack_timeout": self.entries.get("tcp_synack_timeout", None) and self.entries[
                 "tcp_synack_timeout"].get().strip(),
+            "stop_timeout": self.entries.get(f"{pfx}_stop_timeout", None) and self.entries[
+                f"{pfx}_stop_timeout"].get().strip(),
         }
 
     # ================================================================

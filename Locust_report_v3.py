@@ -1606,9 +1606,11 @@ def create_pdf_report(stats_file, history_file, output_file,
         wd_df, wd_stats, wd_changes = load_watchdog_reachability(reach_file)
         if wd_stats is not None:
             pct_down = float(wd_stats["pct_down"])
-            is_stable = pct_down <= reach_threshold
+            watchdog_stable = pct_down <= reach_threshold
         else:
-            is_stable = True
+            watchdog_stable = True
+        packet_stable = failure_rate <= request_threshold_pct
+        is_stable = watchdog_stable and packet_stable
     else:
         is_stable = failure_rate <= request_threshold_pct
 
@@ -1856,7 +1858,6 @@ def create_pdf_report(stats_file, history_file, output_file,
             fig.patch.set_facecolor("white")
             p_wd_pie = os.path.join(REPORT_DIR, "watchdog_pie.png")
             save_chart(p_wd_pie, dpi=220)
-            story.append(Image(p_wd_pie, width=280, height=220))
             story.append(Image(p_wd_pie, width=280, height=220))
             story.append(Spacer(1, 4))
             story.append(Paragraph(
