@@ -1318,7 +1318,7 @@ def create_pdf_report(stats_file, history_file, output_file,
                       http_method=None, endpoint_path=None,
                       processes=None, stop_timeout=None,
                       connect_timeout=None, read_timeout=None,
-                      include_failures=False,
+                      include_failures=False, target_rps=None,
                       sign=False, p12_path=None, p12_pass=b"yourpassword"):
 
     if load_dotenv is not None:
@@ -1520,6 +1520,11 @@ def create_pdf_report(stats_file, history_file, output_file,
     story.append(ColorBand("  Test Information"))
     story.append(Spacer(1, 8))
     source_ports_display = str(src_ports).strip() if src_ports else ""
+    target_rps = str(target_rps or os.getenv("TARGET_RPS", "0")).strip()
+    try:
+        rps_limit_text = "Unlimited" if float(target_rps) == 0 else f"{target_rps} req/s per user"
+    except ValueError:
+        rps_limit_text = "Unlimited"
 
     if source_ports_display.lower() in ("nan", "none", "null", ""):
         source_ports_display = _get_os_port_range()
@@ -1580,6 +1585,7 @@ def create_pdf_report(stats_file, history_file, output_file,
             [Paragraph("Processes",         S["label"]), Paragraph(str(processes), S["value"])],
             [Paragraph("Request failure threshold",      S["label"]), Paragraph(f"{request_threshold*100:.1f}%", S["value"])],
             [Paragraph("Reachability failure threshold", S["label"]), Paragraph(f"{reach_threshold * 100:.1f}%", S["value"])],
+            [Paragraph("RPS limit per user", S["label"]), Paragraph(rps_limit_text, S["value"])],
             [Paragraph("Report generated",  S["label"]),
              Paragraph(datetime.now().strftime('%d-%m-%Y  %H:%M:%S'),                            S["value"])],
         ], col_widths=[160, None]))
