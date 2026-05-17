@@ -58,7 +58,8 @@ def run(
     port=None,
     on_master_start=None,
     csv_prefix=None,
-    iface=None
+    iface=None,
+    synack_timeout=None
 ):
     cfg = Config_Load()
     host_ip = resolve_host(host_ip or cfg.get("ipaddr"))
@@ -95,6 +96,7 @@ def run(
     env["PYTHONPATH"] = os.getcwd()
     env["IP_POOL_FILE"] = pool_file
     env["IFACE"] = iface
+    env["SYNACK_TIMEOUT"] = str(synack_timeout or cfg.get("synack_timeout") or "5")
 
     locust_file = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                "Locust_tcp.py" if protocol == "tcp" else "Locust_udp.py")
