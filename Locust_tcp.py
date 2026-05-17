@@ -43,14 +43,20 @@ def _start_sniffer():
         return
     _last_synack = None
     iface = os.environ.get("IFACE")
-    _sniffer = AsyncSniffer(
-        filter=f"src host {TARGET_HOST} and tcp and tcp[tcpflags] & (tcp-syn|tcp-ack) == (tcp-syn|tcp-ack)",
-        prn=_on_synack,
-        store=False,
-        iface=iface,
-    )
-    _sniffer.start()
-    print(f"[Locust] SYN-ACK sniffer started on {iface} for {TARGET_HOST}:{TARGET_PORT}")
+    try:
+        from scapy.all import conf
+        conf.sniff_promisc = False  # don't require promiscuous mode
+        _sniffer = AsyncSniffer(
+            filter=f"src host {TARGET_HOST} and tcp and tcp[tcpflags] & (tcp-syn|tcp-ack) == (tcp-syn|tcp-ack)",
+            prn=_on_synack,
+            store=False,
+            iface=iface,
+        )
+        _sniffer.start()
+        print(f"[Locust] SYN-ACK sniffer started on {iface} for {TARGET_HOST}:{TARGET_PORT}")
+    except Exception as e:
+        print(f"[Locust] SYN-ACK sniffer failed to start: {e}")
+        _sniffer = None
 
 @events.quitting.add_listener
 def _stop_sniffer(**kwargs):
