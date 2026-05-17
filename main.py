@@ -120,7 +120,6 @@ def run(
         "--headless",
         "--csv", csv_out,
         "-u", str(users),
-        "--stop-timeout", stop_timeout,
         "-r", str(spawn_rate),
         "--stop-timeout", stop_timeout,
         "--run-time", f"{run_time}s",
@@ -150,7 +149,7 @@ def run(
 
     try:
         print(f"Running Locust on {host}...")
-        master_proc = subprocess.Popen(master_cmd)
+        master_proc = subprocess.Popen(master_cmd, env = env)
         processes.append(master_proc)
 
         if on_master_start:
@@ -162,7 +161,7 @@ def run(
         for i in range(worker_count):
             w_env = env.copy()
             w_env["LOCUST_WORKER_ID"] = str(i)
-            w_proc = subprocess.Popen(worker_cmd)
+            w_proc = subprocess.Popen(worker_cmd, env=env)
             processes.append(w_proc)
 
         master_proc.wait()
