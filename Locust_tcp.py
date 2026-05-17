@@ -13,6 +13,7 @@ TARGET_HOST = os.environ.get("TARGET_HOST", "")
 TARGET_PORT = int(os.environ.get("TARGET_PORT", 0))
 SYNACK_TIMEOUT = float(os.environ.get("SYNACK_TIMEOUT", 5))
 TARGET_RPS = float(os.environ.get("TARGET_RPS", 0))
+print(f"[Locust] TARGET_RPS = {TARGET_RPS}")
 
 _ip_pool = []
 _last_synack = None

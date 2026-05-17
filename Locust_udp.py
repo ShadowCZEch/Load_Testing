@@ -10,7 +10,7 @@ from gevent import sleep
 
 TARGET_PORT = int(os.environ.get("TARGET_PORT", 0))
 TARGET_RPS = float(os.environ.get("TARGET_RPS", 0))
-
+print(f"[Locust] TARGET_RPS = {TARGET_RPS}")
 _ip_pool = []
 
 
