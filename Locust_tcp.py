@@ -88,11 +88,11 @@ class UserClass(User):
         try:
             tcp_packet(dst_port=TARGET_PORT, src_ip=self.source_ip)
             rt = (time.perf_counter() - start) * 1000
-
             last: Optional[float] = _last_synack
+            _effective_timeout = max(SYNACK_TIMEOUT, (1.0 / TARGET_RPS) * 10) if TARGET_RPS > 0 else SYNACK_TIMEOUT
             if _shutting_down or last is None:
                 exception = None
-            elif (time.time() - last) > SYNACK_TIMEOUT:
+            elif (time.time() - last) > _effective_timeout:
                 exception = Exception("No SYN-ACK received")
             else:
                 exception = None
