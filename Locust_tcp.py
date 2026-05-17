@@ -4,13 +4,18 @@ import os
 from Packet_create import tcp_packet
 import time
 import random
-from locust import User, task, constant
+from locust import User, task, constant, events
 from gevent import sleep
+from scapy.all import AsyncSniffer
+from typing import Optional
 
-
+TARGET_HOST = os.environ.get("TARGET_HOST", "")
 TARGET_PORT = int(os.environ.get("TARGET_PORT", 0))
+SYNACK_TIMEOUT = float(os.environ.get("SYNACK_TIMEOUT", 5))
 
 _ip_pool = []
+_last_synack = None
+_sniffer: Optional[AsyncSniffer] = None
 
 def _load_pool():
     global _ip_pool
@@ -25,6 +30,33 @@ def _load_pool():
     else:
         print(f"[ERROR] Pool file not found: {pool_file}")
 
+def _on_synack():
+    global _last_synack
+    _last_synack = time.time()
+
+def _start_sniffer():
+    global _sniffer, _last_synack
+    if _sniffer is not None:
+        return
+    _last_synack = time.time()
+    iface = os.environ.get("IFACE")
+    _sniffer = AsyncSniffer(
+        filter=f"src host {TARGET_HOST} and tcp and tcp[tcpflags] & (tcp-syn|tcp-ack) == (tcp-syn|tcp-ack)",
+        prn=_on_synack,
+        store=False,
+        iface=iface,
+    )
+    _sniffer.start()
+    print(f"[Locust] SYN-ACK sniffer started on {iface} for {TARGET_HOST}:{TARGET_PORT}")
+
+@events.quitting.add_listener
+def _stop_sniffer(**kwargs):
+    global _sniffer
+    if _sniffer:
+        _sniffer.stop()
+        _sniffer = None
+        print("[Locust] SYN-ACK sniffer stopped")
+
 class UserClass(User):
     wait_time = constant(0)
     source_ip = None
@@ -34,6 +66,7 @@ class UserClass(User):
         if not _ip_pool:
             raise Exception("IP pool is empty — check IP_POOL_FILE")
         self.source_ip = random.choice(_ip_pool)
+        _start_sniffer()
 
     @task
     def keep_send(self):
@@ -42,13 +75,23 @@ class UserClass(User):
         try:
             tcp_packet(dst_port=TARGET_PORT, src_ip=self.source_ip)
             rt = (time.perf_counter() - start) * 1000
-            self.environment.events.request.fire(
-                request_type="TCP",
-                name="tcp_flood",
-                response_time=rt,
-                response_length=0,
-                exception=None,
-            )
+            since_last = time.time() - (_last_synack or 0)
+            if since_last > SYNACK_TIMEOUT:
+                self.environment.events.request.fire(
+                    request_type="TCP",
+                    name="tcp_flood",
+                    response_time=rt,
+                    response_length=0,
+                    exception=None,
+                )
+            else:
+                self.environment.events.request.fire(
+                    request_type="TCP",
+                    name="tcp_flood",
+                    response_time=rt,
+                    response_length=0,
+                    exception=None,
+                )
         except Exception as e:
             self.environment.events.request.fire(
                 request_type="TCP",
