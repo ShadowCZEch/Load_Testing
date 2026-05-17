@@ -713,6 +713,7 @@ class LocustGUI(ctk.CTk):
             "SSL_VERIFY":      "true" if self._ssl_verify_var.get() else "false",
             "REACH_INTERVAL":  self.get("reach_interval"),
             "REACH_TIMEOUT":   self.get("reach_timeout"),
+            "TARGET_RPS": self.get(f"{self._active_page.lower()}_target_rps") or "0",
             "REACH_SRC_IP":    self.get("reach_src_ip"),
             "REACH_INTERFACE": self.get("reach_interface"),
             "REQUEST_FAILURE_THRESHOLD": self.get("request_threshold") or "1",
@@ -1823,8 +1824,6 @@ class LocustGUI(ctk.CTk):
                 "tcp_synack_timeout"].get().strip(),
             "stop_timeout": self.entries.get(f"{pfx}_stop_timeout", None) and self.entries[
                 f"{pfx}_stop_timeout"].get().strip(),
-            "target_rps": self.entries.get(f"{pfx}_target_rps", None) and self.entries[
-                f"{pfx}_target_rps"].get().strip(),
         }
 
     # ================================================================
@@ -3020,7 +3019,7 @@ class LocustGUI(ctk.CTk):
                 "processes", "stop_timeout", "connect_timeout", "read_timeout",
 
                 "reach_interval", "reach_timeout", "reach_src_ip", "reach_interface",
-                "request_threshold", "reach_threshold", "test_type",
+                "request_threshold", "reach_threshold", "test_type", "target_rps",
             ])
             writer.writeheader()
             writer.writerow({
@@ -3048,6 +3047,7 @@ class LocustGUI(ctk.CTk):
                 "connect_timeout":  self.get("connect_timeout") or "5",
                 "read_timeout":     self.get("read_timeout") or "15",
                 "test_type":        self.get("test_type"),
+                "target_rps": self.get(f"{self._active_page.lower()}_target_rps") or "0",
             })
         self.write_log(f"✓ Config saved → {target_clean} ({resolved_ip}) [{ip_ver.upper()}]")
 
@@ -3092,7 +3092,9 @@ class LocustGUI(ctk.CTk):
 
                 test_type_cfg = _clean_csv_value(cfg.get("test_type", ""), "")
                 processes = _clean_csv_value(cfg.get("processes", ""), "")
+
                 stop_timeout = _clean_csv_value(cfg.get("stop_timeout", ""), "60")
+                target_rps = _clean_csv_value(cfg.get("target_rps", ""), "0")
 
                 http_method = _clean_csv_value(cfg.get("http_method", ""), "GET")
                 endpoint_path = normalize_endpoint_paths(
@@ -3111,7 +3113,7 @@ class LocustGUI(ctk.CTk):
                     request_threshold, reach_threshold, test_type_cfg, processes, stop_timeout,
                     reach_src_ip, ip_pool_count, ip_pool_range,
                     http_method, endpoint_path, connect_timeout, read_timeout,
-                    src_ports, reach_interval_cfg, reach_timeout_cfg, reach_interface
+                    src_ports, reach_interval_cfg, reach_timeout_cfg, reach_interface, target_rps,
                 )
 
 
@@ -3763,7 +3765,7 @@ class LocustGUI(ctk.CTk):
              request_threshold, reach_threshold, test_type_cfg, processes, stop_timeout,
              reach_src_ip, ip_pool_count, ip_pool_range,
              http_method, endpoint_path, connect_timeout, read_timeout,
-             src_ports, reach_interval_cfg, reach_timeout_cfg, reach_interface) = self._load_test_config(BASE_DIR)
+             src_ports, reach_interval_cfg, reach_timeout_cfg, reach_interface, target_rps) = self._load_test_config(BASE_DIR)
 
             report_name = self._report_name_entry.get().strip() or "Locust_Report"
             if not report_name.endswith(".pdf"):
@@ -3806,7 +3808,8 @@ class LocustGUI(ctk.CTk):
                 reach_timeout   = float(reach_timeout_cfg),
                 reach_src_ip    = reach_src_ip,
                 reach_interface = reach_interface,
-                include_failures = include_failures,
+                target_rps      = target_rps,
+                include_failures=include_failures,
                 sign             = sign,
                 p12_path         = p12_path,
                 p12_pass         = p12_pass,
