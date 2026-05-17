@@ -29,8 +29,12 @@ def _load_pool():
 
 
 class UserClass(User):
-    wait_time = constant_throughput(TARGET_RPS) if TARGET_RPS > 0 else constant(0)
     source_ip = None
+
+    if TARGET_RPS > 0:
+        wait_time = constant_throughput(TARGET_RPS)
+    else:
+        wait_time = constant(0)
 
     def on_start(self):
         _load_pool()
