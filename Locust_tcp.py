@@ -30,7 +30,7 @@ def _load_pool():
     else:
         print(f"[ERROR] Pool file not found: {pool_file}")
 
-def _on_synack():
+def _on_synack(_):
     global _last_synack
     _last_synack = time.time()
 
