@@ -1521,10 +1521,11 @@ def create_pdf_report(stats_file, history_file, output_file,
     story.append(Spacer(1, 8))
     source_ports_display = str(src_ports).strip() if src_ports else ""
     target_rps = str(target_rps or os.getenv("TARGET_RPS", "0")).strip()
-    try:
-        rps_limit_text = "Unlimited" if float(target_rps) == 0 else f"{target_rps} req/s per user"
-    except ValueError:
+
+    if float(target_rps) == 0:
         rps_limit_text = "Unlimited"
+    else:
+        rps_limit_text = f"{target_rps} req/s per user"
 
     if source_ports_display.lower() in ("nan", "none", "null", ""):
         source_ports_display = _get_os_port_range()
