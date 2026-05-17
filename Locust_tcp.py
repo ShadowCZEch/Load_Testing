@@ -38,7 +38,7 @@ def _start_sniffer():
     global _sniffer, _last_synack
     if _sniffer is not None:
         return
-    _last_synack = time.time()
+    _last_synack = None
     iface = os.environ.get("IFACE")
     _sniffer = AsyncSniffer(
         filter=f"src host {TARGET_HOST} and tcp and tcp[tcpflags] & (tcp-syn|tcp-ack) == (tcp-syn|tcp-ack)",
@@ -75,23 +75,22 @@ class UserClass(User):
         try:
             tcp_packet(dst_port=TARGET_PORT, src_ip=self.source_ip)
             rt = (time.perf_counter() - start) * 1000
-            since_last = time.time() - (_last_synack or 0)
-            if since_last > SYNACK_TIMEOUT:
-                self.environment.events.request.fire(
-                    request_type="TCP",
-                    name="tcp_flood",
-                    response_time=rt,
-                    response_length=0,
-                    exception=None,
-                )
+
+            last: Optional[float] = _last_synack
+            if last is None:
+                exception = None
+            elif (time.time() - last) > SYNACK_TIMEOUT:
+                exception = Exception(f"No SYN-ACK for {time.time() - last:.1f}s")
             else:
-                self.environment.events.request.fire(
-                    request_type="TCP",
-                    name="tcp_flood",
-                    response_time=rt,
-                    response_length=0,
-                    exception=None,
-                )
+                exception = None
+
+            self.environment.events.request.fire(
+                request_type="TCP",
+                name="tcp_flood",
+                response_time=rt,
+                response_length=0,
+                exception=exception,
+            )
         except Exception as e:
             self.environment.events.request.fire(
                 request_type="TCP",
