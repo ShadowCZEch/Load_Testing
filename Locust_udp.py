@@ -4,11 +4,12 @@ import os
 import time
 import random
 from Packet_create import  udp_packet
-from locust import User, task, constant
+from locust import User, task, constant, constant_throughput
 from gevent import sleep
 
 
 TARGET_PORT = int(os.environ.get("TARGET_PORT", 0))
+TARGET_RPS = float(os.environ.get("TARGET_RPS", 0))
 
 _ip_pool = []
 
@@ -28,7 +29,7 @@ def _load_pool():
 
 
 class UserClass(User):
-    wait_time = constant(0)
+    wait_time = constant_throughput(TARGET_RPS) if TARGET_RPS > 0 else constant(0)
     source_ip = None
 
     def on_start(self):

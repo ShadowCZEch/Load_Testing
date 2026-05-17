@@ -4,7 +4,7 @@ import os
 from Packet_create import tcp_packet
 import time
 import random
-from locust import User, task, constant, events
+from locust import User, task, constant, events, constant_throughput
 from gevent import sleep
 from scapy.all import AsyncSniffer
 from typing import Optional
@@ -12,6 +12,7 @@ from typing import Optional
 TARGET_HOST = os.environ.get("TARGET_HOST", "")
 TARGET_PORT = int(os.environ.get("TARGET_PORT", 0))
 SYNACK_TIMEOUT = float(os.environ.get("SYNACK_TIMEOUT", 5))
+TARGET_RPS = float(os.environ.get("TARGET_RPS", 0))
 
 _ip_pool = []
 _last_synack = None
@@ -60,7 +61,7 @@ def _stop_sniffer(**kwargs):
         print("[Locust] SYN-ACK sniffer stopped")
 
 class UserClass(User):
-    wait_time = constant(0)
+    wait_time = constant_throughput(TARGET_RPS) if TARGET_RPS > 0 else constant(0)
     source_ip = None
 
     def on_start(self):

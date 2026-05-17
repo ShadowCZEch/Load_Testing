@@ -1627,9 +1627,13 @@ class LocustGUI(ctk.CTk):
         self._field_row(card, 1, "SYN-ACK timeout (s)", "tcp_synack_timeout", "5", col=0,
                         help="How long to wait for a SYN-ACK response before marking requests as failed."
                              "\nIf no SYN-ACK is received from the target within this window, Locust reports failures.")
+        self._field_row(card, 1, "Target RPS (0=unlimited)", "tcp_target_rps", "0", col=2,
+                        help="Target requests per second per user.\n0 = send as fast as possible.\nExample: 10 = each user sends 10 requests/second.")
+        self._setup_positive_field_highlight("tcp_target_rps")
         self._setup_process_field_highlight("tcp_processes")
         self._setup_positive_field_highlight("tcp_stop_timeout")
         self._setup_positive_field_highlight("tcp_synack_timeout")
+        self._setup_positive_field_highlight("tcp_target_rps")
 
         # ── Locustfile ────────────────────────────────────────────
         s_row = self._card_header(scroll, "Locustfile", s_row)
@@ -1733,8 +1737,11 @@ class LocustGUI(ctk.CTk):
                         help="Time Locust waits for users to finish after test ends.")
         self._field_row(card, 0, "Processes", "udp_processes", "-1", col=2,
                         help="Number of worker processes.\n-1 = one per CPU core.")
+        self._field_row(card, 1, "Target RPS (0=unlimited)", "udp_target_rps", "0", col=2,
+                        help="Target requests per second per user.\n0 = send as fast as possible.\nExample: 10 = each user sends 10 requests/second.")
         self._setup_process_field_highlight("udp_processes")
         self._setup_positive_field_highlight("udp_stop_timeout")
+        self._setup_positive_field_highlight("udp_target_rps")
         # ── Locustfile ────────────────────────────────────────────
         s_row = self._card_header(scroll, "Locustfile", s_row)
         card_lf = self._card(scroll, s_row)
@@ -1816,6 +1823,8 @@ class LocustGUI(ctk.CTk):
                 "tcp_synack_timeout"].get().strip(),
             "stop_timeout": self.entries.get(f"{pfx}_stop_timeout", None) and self.entries[
                 f"{pfx}_stop_timeout"].get().strip(),
+            "target_rps": self.entries.get(f"{pfx}_target_rps", None) and self.entries[
+                f"{pfx}_target_rps"].get().strip(),
         }
 
     # ================================================================

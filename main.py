@@ -61,6 +61,7 @@ def run(
     iface=None,
     synack_timeout=None,
     stop_timeout=None,
+    target_rps=None,
 ):
     cfg = Config_Load()
     host_ip = resolve_host(host_ip or cfg.get("ipaddr"))
@@ -98,6 +99,7 @@ def run(
     env["IP_POOL_FILE"] = pool_file
     env["IFACE"] = iface
     env["SYNACK_TIMEOUT"] = str(synack_timeout or cfg.get("synack_timeout") or "5")
+    env["TARGET_RPS"] = str(target_rps or "0")
 
     locust_file = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                "Locust_tcp.py" if protocol == "tcp" else "Locust_udp.py")
@@ -121,6 +123,7 @@ def run(
         "--stop-timeout", stop_timeout,
         "-r", str(spawn_rate),
         "--stop-timeout", stop_timeout,
+        f"TARGET_RPS={target_rps or 0}",
         "--run-time", f"{run_time}s",
         "--expect-workers", str(worker_count),
         "--html", os.path.join(os.path.dirname(os.path.abspath(__file__)), "report.html"),
@@ -137,6 +140,7 @@ def run(
         f"PACKET_SIZE={packet_size or cfg.get('packet_size') or 60}",
         f"LOCUST_MODE={protocol}",
         f"PYTHONPATH={os.getcwd()}",
+        f"TARGET_RPS={target_rps or 0}",
         sys.executable,
         "-m",
         "locust",
