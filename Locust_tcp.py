@@ -16,6 +16,7 @@ SYNACK_TIMEOUT = float(os.environ.get("SYNACK_TIMEOUT", 5))
 _ip_pool = []
 _last_synack = None
 _sniffer: Optional[AsyncSniffer] = None
+_shutting_down = False
 
 def _load_pool():
     global _ip_pool
@@ -51,7 +52,8 @@ def _start_sniffer():
 
 @events.quitting.add_listener
 def _stop_sniffer(**kwargs):
-    global _sniffer
+    global _sniffer, _shutting_down
+    _shutting_down = True
     if _sniffer:
         _sniffer.stop()
         _sniffer = None
@@ -77,7 +79,7 @@ class UserClass(User):
             rt = (time.perf_counter() - start) * 1000
 
             last: Optional[float] = _last_synack
-            if last is None:
+            if _shutting_down or last is None:
                 exception = None
             elif (time.time() - last) > SYNACK_TIMEOUT:
                 exception = Exception("No SYN-ACK received")
