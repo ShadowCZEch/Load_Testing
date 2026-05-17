@@ -80,7 +80,7 @@ class UserClass(User):
             if last is None:
                 exception = None
             elif (time.time() - last) > SYNACK_TIMEOUT:
-                exception = Exception(f"No SYN-ACK for {time.time() - last:.1f}s")
+                exception = Exception("No SYN-ACK received")
             else:
                 exception = None
 
