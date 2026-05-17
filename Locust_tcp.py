@@ -42,10 +42,13 @@ def _start_sniffer():
     if _sniffer is not None:
         return
     _last_synack = None
+    if TARGET_RPS > 0:
+        print(f"[Locust] SYN-ACK sniffer disabled when TARGET_RPS is set")
+        return
     iface = os.environ.get("IFACE")
     try:
         from scapy.all import conf
-        conf.sniff_promisc = False  # don't require promiscuous mode
+        conf.sniff_promisc = False
         _sniffer = AsyncSniffer(
             filter=f"src host {TARGET_HOST} and tcp and tcp[tcpflags] & (tcp-syn|tcp-ack) == (tcp-syn|tcp-ack)",
             prn=_on_synack,
@@ -89,7 +92,7 @@ class UserClass(User):
             tcp_packet(dst_port=TARGET_PORT, src_ip=self.source_ip)
             rt = (time.perf_counter() - start) * 1000
             last: Optional[float] = _last_synack
-            _effective_timeout = max(SYNACK_TIMEOUT, (1.0 / TARGET_RPS) * 10) if TARGET_RPS > 0 else SYNACK_TIMEOUT
+            _effective_timeout = max(SYNACK_TIMEOUT, (1.0 / TARGET_RPS) * 100) if TARGET_RPS > 0 else SYNACK_TIMEOUT
             if _shutting_down or last is None:
                 exception = None
             elif (time.time() - last) > _effective_timeout:
