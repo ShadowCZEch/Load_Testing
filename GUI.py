@@ -1824,6 +1824,8 @@ class LocustGUI(ctk.CTk):
                 "tcp_synack_timeout"].get().strip(),
             "stop_timeout": self.entries.get(f"{pfx}_stop_timeout", None) and self.entries[
                 f"{pfx}_stop_timeout"].get().strip(),
+            "target_rps": self.entries.get(f"{pfx}_target_rps", None) and self.entries[
+                f"{pfx}_target_rps"].get().strip(),
         }
 
     # ================================================================
