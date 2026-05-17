@@ -113,7 +113,7 @@ def run(
         f"TARGET_HOST={host_ip}",
         f"TARGET_PORT={port}",
         f"PACKET_SIZE={packet_size or cfg.get('packet_size') or 60}",
-        f"TARGET_RPS={target_rps or 0}"
+        f"TARGET_RPS={target_rps or 0}",
         f"LOCUST_MODE={protocol}",
         f"PYTHONPATH={os.getcwd()}", sys.executable, "-m", "locust",
         "-f", locust_file,
@@ -137,7 +137,7 @@ def run(
         f"TARGET_HOST={host_ip}",
         f"TARGET_PORT={port}",
         f"PACKET_SIZE={packet_size or cfg.get('packet_size') or 60}",
-        f"TARGET_RPS={target_rps or 0}"
+        f"TARGET_RPS={target_rps or 0}",
         f"LOCUST_MODE={protocol}",
         f"PYTHONPATH={os.getcwd()}",
         sys.executable,
