@@ -1629,7 +1629,8 @@ class LocustGUI(ctk.CTk):
                         help="How long to wait for a SYN-ACK response before marking requests as failed."
                              "\nIf no SYN-ACK is received from the target within this window, Locust reports failures.")
         self._field_row(card, 1, "Target RPS", "tcp_target_rps", "0", col=2,
-                        help="Target requests per second per user.\n0 = send as fast as possible.\nExample: 10 = each user sends 10 requests/second.")
+                        help="Target requests per second per user.\n0 = send as fast as possible.\nExample: 10 = each user sends 10 requests/second."
+                             "\n Warning:Locust fail reporting is not available with fixed output.")
         self._setup_positive_field_highlight("tcp_target_rps")
         self._setup_process_field_highlight("tcp_processes")
         self._setup_positive_field_highlight("tcp_stop_timeout")
