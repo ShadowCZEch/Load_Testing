@@ -66,8 +66,7 @@ def Watchdog(ipaddr=None, poll_interval=None, duration=None,
         raise ValueError("ipaddr must be provided.")
 
     poll_interval = float(poll_interval)
-    ping_timeout  = min(0.8, poll_interval)
-    timeout       = max(1.0, ping_timeout)
+    timeout = min(poll_interval, 2.0)
 
 
     out = Path(output_dir)
