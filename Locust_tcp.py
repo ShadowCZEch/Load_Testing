@@ -108,6 +108,7 @@ class UserClass(User):
                 exception=exception,
             )
         except Exception as e:
+            print(f"[Locust] tcp_packet exception: {type(e).__name__}: {e}")
             self.environment.events.request.fire(
                 request_type="TCP",
                 name="tcp_flood",
