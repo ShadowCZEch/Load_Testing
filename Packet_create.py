@@ -31,7 +31,6 @@ def _get_socket():
     return _socket
 
 def udp_packet(dst_port,src_ip=None):
-
     sport = random.randint(1,65535)
 
     pkt = IP(dst=TARGET_HOST, src=src_ip, len=PACKET_SIZE, chksum=0) / \
