@@ -57,7 +57,7 @@ def one_ping(ipaddr, timeout, iface=None):
         return False
 
 def Watchdog(ipaddr=None, poll_interval=None, duration=None,
-             output_dir: str = "data", append: bool = True, iface = None):
+             output_dir: str = "data", append: bool = False, iface = None):
 
     if not poll_interval:
         raise ValueError("poll_interval must be provided.")
