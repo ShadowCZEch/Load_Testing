@@ -4,21 +4,15 @@ import os
 from Packet_create import tcp_packet
 import time
 import random
-from locust import User, task, constant, events, constant_throughput
+from locust import User, task, constant, constant_throughput
 from gevent import sleep
-from scapy.all import AsyncSniffer
-from typing import Optional
 
 TARGET_HOST = os.environ.get("TARGET_HOST", "")
 TARGET_PORT = int(os.environ.get("TARGET_PORT", 0))
-SYNACK_TIMEOUT = float(os.environ.get("SYNACK_TIMEOUT", 5))
 TARGET_RPS = float(os.environ.get("TARGET_RPS", 0))
 print(f"[Locust] TARGET_RPS = {TARGET_RPS}")
 
 _ip_pool = []
-_last_synack = None
-_sniffer: Optional[AsyncSniffer] = None
-_shutting_down = False
 
 def _load_pool():
     global _ip_pool
@@ -33,43 +27,6 @@ def _load_pool():
     else:
         print(f"[ERROR] Pool file not found: {pool_file}")
 
-def _on_synack(_):
-    global _last_synack
-    _last_synack = time.time()
-
-def _start_sniffer():
-    global _sniffer, _last_synack
-    if _sniffer is not None:
-        return
-    _last_synack = None
-    if TARGET_RPS > 0:
-        print(f"[Locust] SYN-ACK sniffer disabled when TARGET_RPS is set")
-        return
-    iface = os.environ.get("IFACE")
-    try:
-        from scapy.all import conf
-        conf.sniff_promisc = False
-        _sniffer = AsyncSniffer(
-            filter=f"src host {TARGET_HOST} and tcp and tcp[tcpflags] & (tcp-syn|tcp-ack) == (tcp-syn|tcp-ack)",
-            prn=_on_synack,
-            store=False,
-            iface=iface,
-        )
-        _sniffer.start()
-        print(f"[Locust] SYN-ACK sniffer started on {iface} for {TARGET_HOST}:{TARGET_PORT}")
-    except Exception as e:
-        print(f"[Locust] SYN-ACK sniffer failed to start: {e}")
-        _sniffer = None
-
-@events.quitting.add_listener
-def _stop_sniffer(**kwargs):
-    global _sniffer, _shutting_down
-    _shutting_down = True
-    if _sniffer:
-        _sniffer.stop()
-        _sniffer = None
-        print("[Locust] SYN-ACK sniffer stopped")
-
 class UserClass(User):
     source_ip = None
     if TARGET_RPS > 0:
@@ -82,7 +39,6 @@ class UserClass(User):
         if not _ip_pool:
             raise Exception("IP pool is empty — check IP_POOL_FILE")
         self.source_ip = random.choice(_ip_pool)
-        _start_sniffer()
 
     @task
     def keep_send(self):
@@ -91,24 +47,15 @@ class UserClass(User):
         try:
             tcp_packet(dst_port=TARGET_PORT, src_ip=self.source_ip)
             rt = (time.perf_counter() - start) * 1000
-            last: Optional[float] = _last_synack
-            _effective_timeout = max(SYNACK_TIMEOUT, (1.0 / TARGET_RPS) * 100) if TARGET_RPS > 0 else SYNACK_TIMEOUT
-            if _shutting_down or last is None:
-                exception = None
-            elif (time.time() - last) > _effective_timeout:
-                exception = Exception("No SYN-ACK received")
-            else:
-                exception = None
 
             self.environment.events.request.fire(
                 request_type="TCP",
                 name="tcp_flood",
                 response_time=rt,
                 response_length=0,
-                exception=exception,
+                exception=None,
             )
         except Exception as e:
-            print(f"[Locust] tcp_packet exception: {type(e).__name__}: {e}")
             self.environment.events.request.fire(
                 request_type="TCP",
                 name="tcp_flood",
