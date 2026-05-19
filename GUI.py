@@ -1613,7 +1613,6 @@ class LocustGUI(ctk.CTk):
         if default_body:
             self.request_body_text.insert("0.0", default_body)
 
-        # Nastaví viditeľnosť Request body podľa aktuálnej HTTP metódy
         self._on_http_method_change(self._http_method_combo.get())
         # ── Define Test ───────────────────────────────────────────
         s_row = self._build_simple_stages_card(scroll, p, s_row, "TCP")
@@ -1623,15 +1622,14 @@ class LocustGUI(ctk.CTk):
         card = self._card(scroll, s_row)
         s_row += 1
 
-        self._field_row(card, 0, "Stop timeout (s)", "tcp_stop_timeout", "60", col=0, help="...")
-        self._field_row(card, 0, "Processes", "tcp_processes", "-1", col=2, help="...")
-        self._field_row(card, 1, "Target RPS", "tcp_target_rps", "0", col=2,
-                        help="Target requests per second per user.\n0 = send as fast as possible.\nExample: 10 = each user sends 10 requests/second."
-                             "\n Warning:Locust fail reporting is not available with fixed output.")
+        self._field_row(card, 0, "Stop timeout (s)", "tcp_stop_timeout", "60", col=0, help="Time Locust waits for users to finish after test ends.")
+        self._field_row(card, 0, "Processes", "tcp_processes", "-1", col=2, help="Number of worker processes.\n-1 = one per CPU core.")
+        self._field_row(card, 1, "Target RPS", "tcp_target_rps", "-1", col=2,
+                        help="Target requests per second per user.\n-1 = send as fast as possible.\nExample: 10 = each user sends 10 requests/second.")
         self._setup_positive_field_highlight("tcp_target_rps")
         self._setup_process_field_highlight("tcp_processes")
         self._setup_positive_field_highlight("tcp_stop_timeout")
-        self._setup_positive_field_highlight("tcp_target_rps")
+        self._setup_process_field_highlight("tcp_target_rps")
 
         # ── Locustfile ────────────────────────────────────────────
         s_row = self._card_header(scroll, "Locustfile", s_row)
@@ -1735,11 +1733,11 @@ class LocustGUI(ctk.CTk):
                         help="Time Locust waits for users to finish after test ends.")
         self._field_row(card, 0, "Processes", "udp_processes", "-1", col=2,
                         help="Number of worker processes.\n-1 = one per CPU core.")
-        self._field_row(card, 1, "Target RPS", "udp_target_rps", "0", col=2,
-                        help="Target requests per second per user.\n0 = send as fast as possible.\nExample: 10 = each user sends 10 requests/second.")
+        self._field_row(card, 1, "Target RPS", "udp_target_rps", "-1", col=2,
+                        help="Target requests per second per user.\n-1 = send as fast as possible.\nExample: 10 = each user sends 10 requests/second.")
         self._setup_process_field_highlight("udp_processes")
         self._setup_positive_field_highlight("udp_stop_timeout")
-        self._setup_positive_field_highlight("udp_target_rps")
+        self._setup_process_field_highlight("udp_target_rps")
         # ── Locustfile ────────────────────────────────────────────
         s_row = self._card_header(scroll, "Locustfile", s_row)
         card_lf = self._card(scroll, s_row)
