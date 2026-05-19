@@ -915,6 +915,7 @@ class LocustGUI(ctk.CTk):
                     return False
 
         # Process fields (-1 or positive)
+        cpu_count = multiprocessing.cpu_count()
         for key in ["processes", f"{pfx}_processes"]:
             entry = self.entries.get(key)
             if not entry:
@@ -924,6 +925,9 @@ class LocustGUI(ctk.CTk):
                 num = int(val)
                 if num < -1 or num == 0:
                     self.write_log(f"✗ Invalid process count '{val}' — must be -1 (auto) or a positive number.")
+                    return False
+                elif num > cpu_count:
+                    self.write_log(f"✗ Process count '{val}' exceeds CPU core count ({cpu_count}). Use -1 for auto.")
                     return False
             except ValueError:
                 self.write_log(f"✗ Invalid process count '{val}' — must be a number.")
@@ -2645,12 +2649,13 @@ class LocustGUI(ctk.CTk):
         entry = self.entries.get(key)
         if not entry:
             return
+        cpu_count = int(multiprocessing.cpu_count())
 
         def on_change(*args):
             val = entry.get().strip()
             try:
                 num = int(val)
-                if num < -1 or num == 0:
+                if num < -1 or num == 0 or num > cpu_count:
                     entry.configure(fg_color="#4a1a1a")
                 else:
                     entry.configure(fg_color=C_ENTRY)
