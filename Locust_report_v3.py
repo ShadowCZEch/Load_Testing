@@ -673,11 +673,7 @@ def add_final_availability_summary_chart(story, reach_df=None, success=None, fai
 # TCP/UDP Watchdog reachability parser
 # ================================================================
 def load_watchdog_reachability(reach_path):
-    """
-    Reads reachability.csv, takes only the last session,
-    and computes stats + state change log.
-    Returns: (df, stats_dict, state_changes_list) or (None, None, None)
-    """
+
     if not os.path.exists(reach_path):
         return None, None, None
     try:
@@ -699,7 +695,6 @@ def load_watchdog_reachability(reach_path):
                 parts = line.split(",", 1)
                 if len(parts) == 2:
                     current_session.append({"timestamp": parts[0], "status": parts[1]})
-            # last session in file
             if current_session:
                 last_session_rows = current_session
 
@@ -1642,14 +1637,6 @@ def create_pdf_report(stats_file, history_file, output_file,
         [Paragraph("Failures/s",            S["label"]), Paragraph(str(fails_s),        S["value"])],
         [Paragraph("Avg Content Size",      S["label"]), Paragraph(f"{avg_size} B",     S["value"])],
     ], col_widths=[200, None]))
-    if test_type_meta in ("TCP", "UDP"):
-        story.append(Paragraph(
-            "Failure rate reflects individual packet-level failures — each packet sent "
-            "during server downtime is counted as a failure. This differs from the Watchdog "
-            "reachability percentage which measures probe-level availability at fixed intervals.",
-            ParagraphStyle("perf_note", fontSize=8, textColor=C_TEXT_MUTED, alignment=TA_CENTER,
-                           leading=11, spaceBefore=2)
-        ))
 
     story.append(Spacer(1, 14))
     story.append(PageBreak())
