@@ -1630,7 +1630,6 @@ class LocustGUI(ctk.CTk):
         self._field_row(card, 0, "Processes", "tcp_processes", "-1", col=2, help="Number of worker processes.\n-1 = one per CPU core.")
         self._field_row(card, 1, "Target RPS", "tcp_target_rps", "-1", col=2,
                         help="Target requests per second per user.\n-1 = send as fast as possible.\nExample: 10 = each user sends 10 requests/second.")
-        self._setup_positive_field_highlight("tcp_target_rps")
         self._setup_process_field_highlight("tcp_processes")
         self._setup_positive_field_highlight("tcp_stop_timeout")
         self._setup_process_field_highlight("tcp_target_rps")
