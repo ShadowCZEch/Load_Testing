@@ -9,6 +9,8 @@ from misc.Port_scanner import scan_ports_tcp
 import time
 import random
 
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 def resolve_host(host_input):
     parsed = urlparse(host_input)
     hostname = parsed.hostname or host_input.strip()
@@ -101,10 +103,10 @@ def run(
     env["SYNACK_TIMEOUT"] = str(synack_timeout or cfg.get("synack_timeout") or "5")
     env["TARGET_RPS"] = str(target_rps or "0")
 
-    locust_file = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+    locust_file = os.path.join(BASE_DIR, "locust_tests",
                                "Locust_tcp.py" if protocol == "tcp" else "Locust_udp.py")
 
-    csv_out = csv_prefix or os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "report")
+    csv_out = csv_prefix or os.path.join(BASE_DIR, "report", "data", "report")
 
     master_cmd = [
         "sudo",
@@ -125,7 +127,7 @@ def run(
         "--stop-timeout", stop_timeout,
         "--run-time", f"{run_time}s",
         "--expect-workers", str(worker_count),
-        "--html", os.path.join(os.path.dirname(os.path.abspath(__file__)), "report.html"),
+        "--html", os.path.join(BASE_DIR, "report", "report.html"),
         "--csv", csv_out,
         "--host", host
     ]
