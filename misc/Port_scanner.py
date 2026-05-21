@@ -1,7 +1,7 @@
 
 from scapy.error import Scapy_Exception
 from scapy.all import send
-from Config_Load import config_load
+from misc.Config_Load import config_load
 import random
 from scapy.layers.inet import IP,TCP,sr1
 from concurrent.futures import ThreadPoolExecutor, as_completed

@@ -1033,7 +1033,7 @@ class LocustGUI(ctk.CTk):
             else:
                 btn.configure(fg_color="transparent", text_color=C_TEXT,
                                font=ctk.CTkFont(size=13, weight="normal"))
-        for label, frame in self._pages.items():
+        for label, frame in self._page_frames.items():
             if label == name:
                 frame.grid()
             else:
@@ -1945,7 +1945,6 @@ class LocustGUI(ctk.CTk):
                 p["stages"].pop(idx)
                 self._render_stage_rows()
         else:
-            self._stages = self._get_stages()
             if len(self._stages) > 1:
                 self._stages = self._get_stages()
                 self._stages.pop(idx)
@@ -1995,7 +1994,7 @@ class LocustGUI(ctk.CTk):
             entry.after(100, on_change)
             p.setdefault("_stage_vars", []).append(var)
 
-        for i, stage in enumerate(self._stages):
+        for i, stage in enumerate(p["stages"]):
             row_entries = {}
 
             for col, key in enumerate(["duration", "users", "spawn_rate"]):
@@ -2430,7 +2429,7 @@ class LocustGUI(ctk.CTk):
             filetypes=[("Python files", "*.py"), ("All files", "*.*")]
         )
         if path:
-            self.locustfile_path = path
+            self._locustfile_paths[self._active_page] = path
             self._locustfile_label.configure(text=os.path.basename(path), text_color=C_TEXT)
             self.write_log(f"✓ Locustfile: {os.path.basename(path)}")
 
@@ -2977,7 +2976,7 @@ class LocustGUI(ctk.CTk):
     def write_log(self, msg):
         self.log_queue.put(msg)
 
-    def _poll_log_queue(self, *args):
+    def _poll_log_queue(self):
         try:
             while True:
                 msg = self.log_queue.get_nowait()
@@ -2989,7 +2988,7 @@ class LocustGUI(ctk.CTk):
         except queue.Empty:
             pass
         finally:
-            self.after(100, self._poll_log_queue)
+            self.after(100, self._poll_log_queue)   # type: ignore
 
     def clear_log(self):
         self.log.configure(state="normal")
@@ -3185,7 +3184,7 @@ class LocustGUI(ctk.CTk):
                 stop_timeout = _clean_csv_value(cfg.get("stop_timeout", ""), "60")
                 target_rps = _clean_csv_value(cfg.get("target_rps", ""), "0")
 
-                http_method = _clean_csv_value(cfg.get("http_method", ""), self.get("http_method") or "GET")
+                http_method = _clean_csv_value(cfg.get("http_method", ""), "GET")
                 endpoint_path = normalize_endpoint_paths(
                     _clean_csv_value(cfg.get("endpoint_path", ""), self.get("endpoint_path") or "/")
                 )
