@@ -137,6 +137,7 @@ def _page_template(canvas, doc):
 # HELPER FUNCTIONS
 # ================================================================
 
+
 def fmt_bytes(val_kb):
     if val_kb >= 1_000_000:
         return f"{val_kb / 1_000_000:.2f} GB"
@@ -145,7 +146,14 @@ def fmt_bytes(val_kb):
     else:
         return f"{val_kb:.2f} kB"
 
+def _stat(s):
+    if len(s) == 0:
+        return None, None, None
+    return s.min(), s.max(), s.mean()
+
 def fmt_speed(val_kbps):
+    if val_kbps is None:
+        return "—"
     if val_kbps >= 1_000_000:
         return f"{val_kbps / 1_000_000:.2f} GB/s"
     elif val_kbps >= 1_000:
