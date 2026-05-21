@@ -27,6 +27,7 @@ PORT_POOL_FILE = os.path.join(BASE_DIR, "port_pool.txt")
 METADATA_FILE  = os.path.join(DATA_DIR, "report_metadata.csv")
 
 load_dotenv(dotenv_path=os.path.join(BASE_DIR, "config.env"), override=True)
+ACCEPT_ENCODING = os.getenv("ACCEPT_ENCODING", "").strip()
 
 
 # ============================================================
@@ -139,6 +140,7 @@ def load_endpoint_paths():
 # ============================================================
 #  HELPER FUNCTIONS
 # ============================================================
+
 def load_request_body():
     raw = os.getenv("REQUEST_BODY", "").strip()
 
@@ -522,6 +524,11 @@ class MyUser(HttpUser):
             "timeout": (CONNECT_TIMEOUT, READ_TIMEOUT),
             "name": f"{method} {endpoint}",
         }
+
+        if ACCEPT_ENCODING:
+            request_kwargs["headers"] = {
+                "Accept-Encoding": ACCEPT_ENCODING
+            }
 
         if method == "POST":
             body = self.get_request_body()
