@@ -79,7 +79,7 @@ def run(
     stop_timeout = str(stop_timeout or cfg.get("stop_timeout") or 60)
 
 
-    pool_file = ip_pool_file or os.path.join(os.getcwd(), "ip_pool.txt")
+    pool_file = ip_pool_file or os.path.join(BASE_DIR, "IP_pool", "ip_pool.txt")
     if not os.path.isfile(pool_file):
         raise FileNotFoundError(
             f"IP pool file not found: {pool_file}\n"
@@ -179,8 +179,8 @@ def run(
             for p in processes:
                 if p.poll() is None:
                     p.terminate()
-                    report_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "report")
-                    data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+                    report_dir = os.path.join(BASE_DIR, "report")
+                    data_dir = os.path.join(BASE_DIR, "report", "data")
                     uid = os.getuid()
                     gid = os.getgid()
                     for path in [report_dir, data_dir]:
