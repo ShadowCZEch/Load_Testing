@@ -144,7 +144,7 @@ def generate_topology_diagram(target_ip=None, source_ip=None,
         output_file = os.path.join(REPORT_DIR, "topology_diagram.png")
     try:
         sys.path.insert(0, os.path.join(BASE_DIR, "network"))
-        from Create_topology import create_topology_diagram
+        from network.Create_topology import create_topology_diagram
         create_topology_diagram(
             target_ip    = target_ip    or "Unknown",
             source_ip    = source_ip    or "Unknown",

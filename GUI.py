@@ -22,8 +22,8 @@ from urllib.parse import urlparse
 from dotenv import load_dotenv, set_key
 from CTkToolTip import CTkToolTip
 import multiprocessing
-from Reachability           import run as run_reachability_check
-import main as test_main
+from network.Reachability import run as run_reachability_check
+from misc import main as test_main
 from datetime import datetime
 
 ctk.set_appearance_mode("dark")
@@ -36,11 +36,11 @@ IP_POOL_DIR = os.path.join(BASE_DIR, "IP_pool")
 
 load_dotenv(dotenv_path=os.path.join(BASE_DIR, "config.env"), override=True)
 
-from Locust_report_v3 import create_pdf_report
-from Create_IP_Pool_skript import main as create_pool
-from Remove_IP_Pool_skript import main as remove_pool
-from Network_monitor import NetworkMonitor
-from Watchdog import Watchdog
+from report.Locust_report_v3 import create_pdf_report
+from network.Create_IP_Pool_skript import main as create_pool
+from IP_pool.Remove_IP_Pool_skript import main as remove_pool
+from network.Network_monitor import NetworkMonitor
+from network.Watchdog import Watchdog
 
 DATA_DIR   = os.path.join(BASE_DIR, "data")
 os.makedirs(DATA_DIR, exist_ok=True)

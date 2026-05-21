@@ -1,7 +1,7 @@
 # Locust_tcp.py
 
 import os
-from Packet_create import tcp_packet
+from misc.Packet_create import tcp_packet
 import time
 import random
 from locust import User, task, constant, constant_throughput

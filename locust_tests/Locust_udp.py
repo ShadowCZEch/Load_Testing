@@ -3,7 +3,7 @@
 import os
 import time
 import random
-from Packet_create import  udp_packet
+from misc.Packet_create import  udp_packet
 from locust import User, task, constant, constant_throughput
 from gevent import sleep
 

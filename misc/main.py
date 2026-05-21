@@ -5,7 +5,7 @@ import socket
 import ipaddress
 from urllib.parse import urlparse
 from Config_Load import Config_Load
-from Port_scanner import scan_ports_tcp
+from misc.Port_scanner import scan_ports_tcp
 import time
 import random
 
