@@ -915,6 +915,20 @@ class LocustGUI(ctk.CTk):
                     return False
 
         # Process fields (-1 or positive)
+        for key in ["target rps", f"{pfx}target_rps"]:
+            entry = self.entries.get(key)
+            if not entry:
+                continue
+            val = entry.get().strip()
+            try:
+                num = int(val)
+                if num < -1 or num == 0:
+                    self.write_log(f"✗ Invalid target number '{val}' — must be -1 (auto) or a positive number.")
+                    return False
+            except ValueError:
+                self.write_log(f"✗ Invalid process count '{val}' — must be a number.")
+                return False
+
         cpu_count = multiprocessing.cpu_count()
         for key in ["processes", f"{pfx}_processes"]:
             entry = self.entries.get(key)
@@ -1632,7 +1646,7 @@ class LocustGUI(ctk.CTk):
                         help="Target requests per second per user.\n-1 = send as fast as possible.\nExample: 10 = each user sends 10 requests/second.")
         self._setup_process_field_highlight("tcp_processes")
         self._setup_positive_field_highlight("tcp_stop_timeout")
-        self._setup_process_field_highlight("tcp_target_rps")
+        self._setup_target_rps_field_highlight("tcp_target_rps")
 
         # ── Locustfile ────────────────────────────────────────────
         s_row = self._card_header(scroll, "Locustfile", s_row)
@@ -1740,7 +1754,7 @@ class LocustGUI(ctk.CTk):
                         help="Target requests per second per user.\n-1 = send as fast as possible.\nExample: 10 = each user sends 10 requests/second.")
         self._setup_process_field_highlight("udp_processes")
         self._setup_positive_field_highlight("udp_stop_timeout")
-        self._setup_process_field_highlight("udp_target_rps")
+        self._setup_target_rps_field_highlight("udp_target_rps")
         # ── Locustfile ────────────────────────────────────────────
         s_row = self._card_header(scroll, "Locustfile", s_row)
         card_lf = self._card(scroll, s_row)
@@ -2655,6 +2669,32 @@ class LocustGUI(ctk.CTk):
             try:
                 num = int(val)
                 if num < -1 or num == 0 or num > cpu_count:
+                    entry.configure(fg_color="#4a1a1a")
+                else:
+                    entry.configure(fg_color=C_ENTRY)
+            except ValueError:
+                entry.configure(fg_color="#4a1a1a")
+
+
+        var = ctk.StringVar()
+        current_value = entry.get()
+        entry.configure(textvariable=var)
+        var.set(current_value)
+        var.trace_add("write", on_change)
+        self._process_vars = getattr(self, "_process_vars", {})
+        self._process_vars[key] = var
+        entry.after(100, on_change)
+
+    def _setup_target_rps_field_highlight(self, key):
+        entry = self.entries.get(key)
+        if not entry:
+            return
+
+        def on_change(*args):
+            val = entry.get().strip()
+            try:
+                num = int(val)
+                if num < -1 or num == 0:
                     entry.configure(fg_color="#4a1a1a")
                 else:
                     entry.configure(fg_color=C_ENTRY)
