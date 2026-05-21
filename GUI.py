@@ -915,7 +915,7 @@ class LocustGUI(ctk.CTk):
                     return False
 
         # Process fields (-1 or positive)
-        for key in ["target rps", f"{pfx}target_rps"]:
+        for key in [f"{pfx}_target_rps"]:
             entry = self.entries.get(key)
             if not entry:
                 continue
@@ -1823,6 +1823,9 @@ class LocustGUI(ctk.CTk):
         if process_count == "-1":
             process_count = str(multiprocessing.cpu_count())
 
+        rps_entry = self.entries.get(f"{pfx}_target_rps")
+        target_rps = rps_entry.get().strip() if rps_entry is not None else None
+
         return {
             "host_ip": self.entries["target"].get().strip(),
             "protocol": pfx,
@@ -1834,8 +1837,7 @@ class LocustGUI(ctk.CTk):
             "iface": self.entries["interface"].get().strip(),
             "stop_timeout": self.entries.get(f"{pfx}_stop_timeout", None) and self.entries[
                 f"{pfx}_stop_timeout"].get().strip(),
-            "target_rps": self.entries.get(f"{pfx}_target_rps", None) and self.entries[
-                f"{pfx}_target_rps"].get().strip(),
+            "target_rps": target_rps
         }
 
     # ================================================================
@@ -2692,6 +2694,9 @@ class LocustGUI(ctk.CTk):
 
         def on_change(*args):
             val = entry.get().strip()
+            if val == "":
+                entry.configure(fg_color=C_ENTRY)
+                return
             try:
                 num = int(val)
                 if num < -1 or num == 0:
@@ -2701,9 +2706,8 @@ class LocustGUI(ctk.CTk):
             except ValueError:
                 entry.configure(fg_color="#4a1a1a")
 
-
-        var = ctk.StringVar()
         current_value = entry.get()
+        var = ctk.StringVar(value=current_value)
         entry.configure(textvariable=var)
         var.set(current_value)
         var.trace_add("write", on_change)
