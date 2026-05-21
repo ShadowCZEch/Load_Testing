@@ -137,6 +137,22 @@ def _page_template(canvas, doc):
 # HELPER FUNCTIONS
 # ================================================================
 
+def fmt_bytes(val_kb):
+    if val_kb >= 1_000_000:
+        return f"{val_kb / 1_000_000:.2f} GB"
+    elif val_kb >= 1_000:
+        return f"{val_kb / 1_000:.2f} MB"
+    else:
+        return f"{val_kb:.2f} kB"
+
+def fmt_speed(val_kbps):
+    if val_kbps >= 1_000_000:
+        return f"{val_kbps / 1_000_000:.2f} GB/s"
+    elif val_kbps >= 1_000:
+        return f"{val_kbps / 1_000:.2f} MB/s"
+    else:
+        return f"{val_kbps:.2f} kB/s"
+
 def generate_topology_diagram(target_ip=None, source_ip=None,
                                 interface=None, output_file=None,
                                 reach_src_ip=None):
@@ -1219,24 +1235,24 @@ def add_network_traffic_charts(network_file, history_file, story):
             return t
 
         t1 = net_table("RX Total [kB]",
-                       [("Min",     f"{rx_total_min:.2f}"),
-                        ("Max",     f"{rx_total_max:.2f}"),
-                        ("Average", f"{rx_total_avg:.2f}")],
+                       [("Min",     fmt_bytes(rx_total_min)),
+                        ("Max",     fmt_bytes(rx_total_max)),
+                        ("Average", fmt_bytes(rx_total_avg)),],
                        C_PRIMARY)
         t2 = net_table("RX [kB/s]",
-                       [("Min",     f"{rx_spd_min:.2f}"),
-                        ("Max",     f"{rx_spd_max:.2f}"),
-                        ("Average", f"{rx_spd_avg:.2f}")],
+                       [("Min",     fmt_speed(rx_spd_min)),
+                        ("Max",     fmt_speed(rx_spd_max)),
+                        ("Average", fmt_speed(rx_spd_avg)),],
                        colors.HexColor("#1558A8"))
         t3 = net_table("TX Total [kB]",
-                       [("Min",     f"{tx_total_min:.2f}"),
-                        ("Max",     f"{tx_total_max:.2f}"),
-                        ("Average", f"{tx_total_avg:.2f}")],
+                       [("Min",     fmt_bytes(rx_total_min)),
+                        ("Max",     fmt_bytes(rx_total_max)),
+                        ("Average", fmt_bytes(rx_total_avg))],
                        colors.HexColor("#7B2FBE"))
         t4 = net_table("TX [kB/s]",
-                       [("Min",     f"{tx_spd_min:.2f}"),
-                        ("Max",     f"{tx_spd_max:.2f}"),
-                        ("Average", f"{tx_spd_avg:.2f}")],
+                       [("Min",     fmt_speed(rx_spd_min)),
+                        ("Max",     fmt_speed(rx_spd_max)),
+                        ("Average", fmt_speed(rx_spd_avg))],
                        colors.HexColor("#5E1A9C"))
 
         grid = Table(
@@ -1517,7 +1533,7 @@ def create_pdf_report(stats_file, history_file, output_file,
     source_ports_display = str(src_ports).strip() if src_ports else ""
     target_rps = str(target_rps or os.getenv("TARGET_RPS", "0")).strip()
 
-    if float(target_rps) == 0:
+    if float(target_rps) == -1:
         rps_limit_text = "Unlimited"
     else:
         rps_limit_text = f"{target_rps} req/s per user"
