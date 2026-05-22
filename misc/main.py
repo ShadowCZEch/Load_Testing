@@ -29,6 +29,7 @@ def scan(
     protocol=None,
     range_start=None,
     range_end=None,
+    stop_event=None,
 ):
     cfg = Config_Load()
     host_ip = resolve_host(host_ip or cfg.get("ipaddr"))
@@ -40,7 +41,8 @@ def scan(
             range_start=range_start or cfg.get("tcp_range_start"),
             range_end=range_end or cfg.get("tcp_range_end"),
             host_ip=host_ip,
-            version=6 if ":" in host_ip else 4
+            version=6 if ":" in host_ip else 4,
+            stop_event = stop_event,
         )
     else:
         dst_port = random.randint(int(range_start), int(range_end))

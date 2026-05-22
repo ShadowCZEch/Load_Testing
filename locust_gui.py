@@ -3598,6 +3598,7 @@ class LocustGUI(ctk.CTk):
                     protocol=params["protocol"],
                     range_start=params["range_start"],
                     range_end=params["range_end"],
+                    stop_event=self._reach_stop_event,
                 )
                 self.write_log(f"✓ Using port {port} for all stages.")
 
@@ -3805,11 +3806,11 @@ class LocustGUI(ctk.CTk):
             pass
 
         # Stop Locust master + all worker processes
-        self._terminate_process_group(
-            self.locust_process,
-            name="Locust",
-            timeout=5
-        )
+        if self.locust_process:
+            try:
+                os.killpg(os.getpgid(self.locust_process.pid), signal.SIGTERM)
+            except Exception as e:
+                self.write_log(f"⚠ Could not kill process group: {e}")
 
         # Stop network monitor immediately as well
         try:
