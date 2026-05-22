@@ -3821,15 +3821,7 @@ class LocustGUI(ctk.CTk):
             self.write_log(f"⚠ Network monitor stop error: {e}")
 
         self._set_stop_enabled(False)
-        if self._active_page in self._pages and isinstance(self._pages.get(self._active_page), dict):
-            p = self._pages[self._active_page]
-            p["runbtn"].configure(state="normal")
-            p["stopbtn"].configure(state="disabled")
-            self.write_log("✓ Test stopped by user")
-        else:
-            self.runbtn.configure(state="normal")
-            self.stopbtn.configure(state="disabled")
-            self.write_log("✓ Test stopped by user")
+        self.write_log("✓ Test stopped by user")
 
     def _run_reachability(self, duration, interval, ipaddr = None):
         self._reach_stop_event.clear()
