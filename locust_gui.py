@@ -1873,7 +1873,7 @@ class LocustGUI(ctk.CTk):
             "worker_count": process_count,
             "range_start": range_start,
             "range_end": range_end,
-            "ip_pool_file": os.path.join(BASE_DIR, "IP_pool", "ip_pool.txt"),
+            "ip_pool_file": os.path.join(BASE_DIR, "ip_pool.txt"),
             "stages": self._get_stages(),
             "iface": self.entries["interface"].get().strip(),
             "stop_timeout": self.entries.get(f"{pfx}_stop_timeout", None) and self.entries[
