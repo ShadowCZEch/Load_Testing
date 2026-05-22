@@ -33,6 +33,11 @@ BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(BASE_DIR, "network"))
 sys.path.insert(0, os.path.join(BASE_DIR, "report"))
 IP_POOL_DIR   = os.path.join(BASE_DIR, "IP_pool")
+DEFAULT_LOCUSTFILES = {
+    "TCP":    "Locust_tcp.py",
+    "UDP":    "Locust_udp.py",
+    "HTTP/S": "Locustfile_http.py",
+}
 
 load_dotenv(dotenv_path=os.path.join(BASE_DIR, "config.env"), override=True)
 
@@ -714,7 +719,7 @@ class LocustGUI(ctk.CTk):
             "ACCEPT_ENCODING": "identity" if self._disable_compression_var.get() else "",
             "REACH_INTERVAL":  self.get("reach_interval"),
             "REACH_TIMEOUT":   self.get("reach_timeout"),
-            "TARGET_RPS": self.get(f"{self._active_page.lower()}_target_rps") or "0",
+            "TARGET_RPS": self.get(f"{self._active_page.lower().replace('/', '_').replace(' ', '_')}_target_rps"),
             "REACH_SRC_IP":    self.get("reach_src_ip"),
             "REACH_INTERFACE": self.get("reach_interface"),
             "REQUEST_FAILURE_THRESHOLD": self.get("request_threshold") or "1",
@@ -1847,8 +1852,9 @@ class LocustGUI(ctk.CTk):
     # ── TCP/UDP reader ──────────────────────────────────────────
     def _collect_run_params(self):
         active = self._active_page
-        pfx = active.lower()
+        pfx = active.lower().replace("/", "_").replace(" ", "_")
 
+        default_lf = DEFAULT_LOCUSTFILES.get(active, "Locustfile_http.py")
         scan_range = self.entries.get("src_ports")
         scan_range = scan_range.get().strip() if scan_range else ""
         parsed = parse_ports(scan_range)
@@ -1868,12 +1874,13 @@ class LocustGUI(ctk.CTk):
             "worker_count": process_count,
             "range_start": range_start,
             "range_end": range_end,
-            "ip_pool_file": os.path.join(os.getcwd(), "ip_pool.txt"),
+            "ip_pool_file": os.path.join(BASE_DIR, "IP_pool", "ip_pool.txt"),
             "stages": self._get_stages(),
             "iface": self.entries["interface"].get().strip(),
             "stop_timeout": self.entries.get(f"{pfx}_stop_timeout", None) and self.entries[
                 f"{pfx}_stop_timeout"].get().strip(),
-            "target_rps": target_rps
+            "target_rps": target_rps,
+            "locustfile": self._locustfile_paths.get(active) or os.path.join(BASE_DIR, "locust_tests", default_lf),
         }
 
     # ================================================================
@@ -2985,8 +2992,11 @@ class LocustGUI(ctk.CTk):
         self.log.configure(state="disabled")
         self.statusbar.configure(text="●  Log cleared")
 
-    def get(self, key):
-        return self.entries[key].get().strip()
+    def get(self, key, default=""):
+        entry = self.entries.get(key)
+        if entry is None:
+            return default
+        return entry.get().strip()
     def get_request_body(self):
         if not hasattr(self, "request_body_text"):
             return ""
@@ -3123,7 +3133,7 @@ class LocustGUI(ctk.CTk):
                 "connect_timeout":  self.get("connect_timeout") or "5",
                 "read_timeout":     self.get("read_timeout") or "15",
                 "test_type":        self.get("test_type"),
-                "target_rps": self.get(f"{self._active_page.lower()}_target_rps") or "0",
+                "target_rps": self.get(f"{self._active_page.lower().replace('/', '_').replace(' ', '_')}_target_rps"),
             })
         self.write_log(f"✓ Config saved → {target_clean} ({resolved_ip}) [{ip_ver.upper()}]")
 
@@ -3390,8 +3400,13 @@ class LocustGUI(ctk.CTk):
         path = self._locustfile_paths.get(active)
 
         if not path or not os.path.isfile(path):
-            self.write_log(f"✗ [{active}] No locustfile selected.")
-            return
+            default_lf = DEFAULT_LOCUSTFILES.get(active)
+            if default_lf:
+                path = os.path.join(BASE_DIR, "locust_tests", default_lf)
+                self._locustfile_paths[active] = path
+            else:
+                self.write_log(f"✗ [{active}] No locustfile selected.")
+                return
 
         self._stop_requested = False
         self._set_stop_enabled(True)
@@ -3537,13 +3552,6 @@ class LocustGUI(ctk.CTk):
     def _run_test_thread(self):
         locustfile = self._locustfile_paths.get(self._active_page)
 
-        if not locustfile or not os.path.isfile(locustfile):
-            self.write_log("✗ No locustfile selected. Use the Browse button to select one.")
-            return
-
-        if not self._validate_fields():
-            self._set_stop_enabled(False)
-            return
         # ================================================================
         # TCP/UDP
         # ================================================================
@@ -3828,7 +3836,7 @@ class LocustGUI(ctk.CTk):
                     output_dir=DATA_DIR,
                     iface=self.get("reach_interface") or self.get("interface"),
                 )
-            elif self._active_page == "HTTP":
+            elif self._active_page == "HTTP/S":
                 reach_interface = self.get("reach_interface") or self.get("interface")
                 run_reachability_check(
                     source_ip=self.get("reach_src_ip") or self._get_ip_start(),

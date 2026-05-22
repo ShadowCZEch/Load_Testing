@@ -64,6 +64,7 @@ def run(
     synack_timeout=None,
     stop_timeout=None,
     target_rps=None,
+    locustfile=None,
 ):
     cfg = Config_Load()
     host_ip = resolve_host(host_ip or cfg.get("ipaddr"))
