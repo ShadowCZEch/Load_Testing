@@ -3082,7 +3082,7 @@ class LocustGUI(ctk.CTk):
         src_ip      = self.get("reach_src_ip")    or self._get_ip_start()
         reach_iface = self.get("reach_interface") or self.get("interface")
 
-        pool_file  = os.path.join(BASE_DIR, "ip_pool.txt")
+        pool_file  = os.path.join(BASE_DIR, "IP_pool", "ip_pool.txt")
         pool_count = 0
         pool_ips   = ""
         if os.path.exists(pool_file):
@@ -3931,7 +3931,7 @@ class LocustGUI(ctk.CTk):
     # ================================================================
 
     def _save_current_pool_to_dir(self):
-        pool_src = os.path.join(BASE_DIR, "ip_pool.txt")
+        pool_src = os.path.join(BASE_DIR, "IP_pool", "ip_pool.txt")
         if not os.path.exists(pool_src):
             self.write_log("⚠ ip_pool.txt not found — run Setup IP Pool first")
             return
@@ -3989,7 +3989,7 @@ class LocustGUI(ctk.CTk):
             self.write_log("▶ Removing IP pool from interface...")
             prefix_len = self._get_prefix_len()
             interface  = self.get("interface")
-            pool_file  = os.path.join(BASE_DIR, "ip_pool.txt")
+            pool_file  = os.path.join(BASE_DIR, "IP_pool", "ip_pool.txt")
 
             if os.path.exists(pool_file):
                 entries = parse_pool_lines(pool_file)
