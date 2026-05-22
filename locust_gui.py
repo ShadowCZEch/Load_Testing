@@ -581,7 +581,6 @@ class LocustGUI(ctk.CTk):
 
         self.locust_process  = None
         self.log_queue       = queue.Queue()
-        self.locustfile_path = None
         self.entries         = {}
         self._labels         = {}
         self._active_page    = None
@@ -2431,7 +2430,7 @@ class LocustGUI(ctk.CTk):
             self.write_log(f"✓ Locustfile: {os.path.basename(path)}")
 
     def _clear_locustfile(self):
-        self.locustfile_path = None
+        self._locustfile_paths.pop(self._active_page, None)
         if self._active_page in self._pages and isinstance(self._pages.get(self._active_page), dict):
             self._pages[self._active_page]["locustfile_label"].configure(
                 text="", text_color=C_MUTED
@@ -3421,13 +3420,21 @@ class LocustGUI(ctk.CTk):
             self.stopbtn.configure(state="normal")
 
     def _set_stop_enabled(self, enabled):
-        p = self._pages.get(self._active_page)
-        if p is None:
-            return
         self._stop_enabled = enabled
+        p = self._pages.get(self._active_page)
+
+        if isinstance(p, dict) and "runbtn" in p:
+            runbtn = p["runbtn"]
+            stopbtn = p["stopbtn"]
+        else:
+            runbtn = getattr(self, "runbtn", None)
+            stopbtn = getattr(self, "stopbtn", None)
+
+        if not runbtn or not stopbtn:
+            return
 
         if enabled:
-            p["runbtn"].configure(
+            runbtn.configure(
                 fg_color="#B7950B",
                 hover_color="#B7950B",
                 text="⏳ Running...",
@@ -3435,7 +3442,7 @@ class LocustGUI(ctk.CTk):
                 state="disabled",
                 command=lambda: None
             )
-            p["stopbtn"].configure(
+            stopbtn.configure(
                 fg_color=C_DANGER,
                 hover_color=darken(C_DANGER, 25),
                 text_color="white",
@@ -3444,7 +3451,7 @@ class LocustGUI(ctk.CTk):
             )
 
         else:
-            p["runbtn"].configure(
+            runbtn.configure(
                 fg_color=C_SUCCESS,
                 hover_color=darken(C_SUCCESS, 25),
                 text="▶ Start Test",
@@ -3452,7 +3459,7 @@ class LocustGUI(ctk.CTk):
                 state="normal",
                 command=self.run_test
             )
-            p["stopbtn"].configure(
+            stopbtn.configure(
                 fg_color="#3a3a3a",
                 hover_color="#3a3a3a",
                 text_color="#aaaaaa",
@@ -3694,8 +3701,8 @@ class LocustGUI(ctk.CTk):
             self.write_log("-" * 60)
             cmd = [
                 "locust", "-f",
-                self.locustfile_path or os.path.join(
-                    BASE_DIR, "locust_tests", "Locustfile_http.py"
+                self._locustfile_paths.get(self._active_page) or
+                os.path.join(BASE_DIR, "locust_tests", "Locustfile_http.py"
                 ),
                 "--headless",
                 "-H",             self.get("target"),
@@ -3738,7 +3745,6 @@ class LocustGUI(ctk.CTk):
                 self._network_monitor = None
                 self.write_log("📡 Network monitor stopped")
             self._set_stop_enabled(False)
-
     # ================================================================
     # terminate process
     # ================================================================
@@ -3815,12 +3821,7 @@ class LocustGUI(ctk.CTk):
             self.write_log(f"⚠ Network monitor stop error: {e}")
 
         self._set_stop_enabled(False)
-        if self._active_page in self._pages and isinstance(self._pages.get(self._active_page), dict):
-            p = self._pages[self._active_page]
-            p["runbtn"].configure(state="normal")
-            p["stopbtn"].configure(state="disabled")
-        else:
-            self.write_log("✓ Test stopped by user")
+        self.write_log("✓ Test stopped by user")
 
     def _run_reachability(self, duration, interval, ipaddr = None):
         self._reach_stop_event.clear()
