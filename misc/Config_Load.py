@@ -1,12 +1,14 @@
 import socket
 from pathlib import Path
 import ipaddress
-import os
 
-def load_config_path(path="Config.env"):
-    pathp = Path(path)
+def load_config_path(path=None):
+    if path is None:
+        pathp = Path(__file__).resolve().parents[1] / "config.env"
+    else:
+        pathp = Path(path)
     if not pathp.is_file():
-        raise FileNotFoundError(f"Config file not found: {path}")
+        raise FileNotFoundError(f"Config file not found: {pathp}")
     cfg = {}
     with pathp.open("r", encoding="utf-8") as f:
         for line in f:
@@ -16,7 +18,7 @@ def load_config_path(path="Config.env"):
             if "=" not in line:
                 continue
             k, v = line.split("=", 1)
-            cfg[k.strip().lower()] = v.strip()
+            cfg[k.strip().lower()] = v.strip().strip("'\"")
     return cfg
 
 def load_protocol(cfg):
@@ -174,16 +176,11 @@ def spawn_rate(cfg):
 
 def users(cfg):
     workers = cfg.get("workers")
-    cores = os.cpu_count()
     if workers is None:
-        worker_count = cores - 1 if cores > 1 else 1
-        print(f"No value for workers detected.Detected {cores} cores. Running {worker_count} workers.")
-        return worker_count
+        return "-1"
     check = int(workers)
-    if check < 0:
-        raise ValueError("'Invalid number of workers.")
-    elif check > cores:
-        raise ValueError("CPU does not support this amount of workers.")
+    if check < -1:
+        raise ValueError("Invalid number of workers.")
     return workers
 
 def config_load():
@@ -227,6 +224,11 @@ def config_load():
 
 class Config_Load:
     _instance = None
+
+    @classmethod
+    def reset(cls):
+        cls._instance = None
+
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
             cls._instance = super().__new__(cls)

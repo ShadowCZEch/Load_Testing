@@ -19,7 +19,7 @@ import glob
 import json
 from collections import defaultdict
 from urllib.parse import urlparse
-from dotenv import load_dotenv, set_key
+from dotenv import load_dotenv
 from CTkToolTip import CTkToolTip
 import multiprocessing
 from network.Reachability import run as run_reachability_check
@@ -32,12 +32,7 @@ ctk.set_default_color_theme("blue")
 BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(BASE_DIR, "network"))
 sys.path.insert(0, os.path.join(BASE_DIR, "report"))
-IP_POOL_DIR   = os.path.join(BASE_DIR, "IP_pool")
-DEFAULT_LOCUSTFILES = {
-    "TCP":    "Locust_tcp.py",
-    "UDP":    "Locust_udp.py",
-    "HTTP/S": "Locustfile_http.py",
-}
+IP_POOL_DIR = os.path.join(BASE_DIR, "IP_pool")
 
 load_dotenv(dotenv_path=os.path.join(BASE_DIR, "config.env"), override=True)
 
@@ -451,6 +446,7 @@ class SavePoolDialog(ctk.CTkToplevel):
         self.wait_window()
         self._stop_requested = False
 
+
     def _scan_pools(self):
         if not os.path.isdir(self._ip_pool_dir):
             return []
@@ -581,12 +577,15 @@ class LocustGUI(ctk.CTk):
 
         self.locust_process  = None
         self.log_queue       = queue.Queue()
+        self.locustfile_path = None
         self.entries         = {}
         self._labels         = {}
         self._active_page    = None
         self._nav_buttons    = {}
         self._pages          = {}
         self._zoom           = 1.0
+
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self._page_state = {}
         self._page_frames = {}
@@ -611,23 +610,32 @@ class LocustGUI(ctk.CTk):
 
         self._bind_scroll()
 
+        self._stop_requested = False
+        self._stop_enabled = False
         self._locustfile_paths: dict[str, str | None] = {
+            "HTTP/S": None,
             "TCP": None,
             "UDP": None,
-            "HTTP": None,
         }
     # ================================================================
     # THEME
     # ================================================================
 
     def _change_theme(self, theme_name):
-        self.write_log(f"🎨 Theme changed to: {theme_name}")
-        self.after(200, lambda: self._restart_with_theme(theme_name))   # type: ignore
+        if theme_name == self._current_theme:
+            return
 
-    def _restart_with_theme(self, theme_name):
-        self.destroy()
-        app = LocustGUI(initial_theme=theme_name)
-        app.mainloop()
+        if self.locust_process is not None and self.locust_process.poll() is None:
+            self.write_log("⚠ Stop the running test before changing theme.")
+            self._theme_combo.set(self._current_theme)
+            return
+
+        self.write_log(f"🎨 Restarting GUI with theme: {theme_name}")
+        os.environ["LOCUST_GUI_THEME"] = theme_name
+        self.after(100, self._restart_app_process)   # type: ignore
+
+    def _restart_app_process(self):
+        os.execv(sys.executable, [sys.executable] + sys.argv)
 
 
     # ================================================================
@@ -635,6 +643,8 @@ class LocustGUI(ctk.CTk):
     # ================================================================
 
     def _load_env_to_gui(self):
+        _tcp_start = os.getenv('SCAN_PORT_RANGE_TCP_START', '')
+        _tcp_end = os.getenv('SCAN_PORT_RANGE_TCP_END', '')
         mapping = {
             "target":           os.getenv("TARGET_HOST"),
             "endpoint_path":    os.getenv("ENDPOINT_PATH", "/"),
@@ -658,7 +668,8 @@ class LocustGUI(ctk.CTk):
             "reach_interface":  os.getenv("REACH_INTERFACE", ""),
             "request_threshold": os.getenv("REQUEST_FAILURE_THRESHOLD", "1"),
             "reach_threshold":  os.getenv("REACH_THRESHOLD", "5"),
-        }
+            # ── TCP/UDP ─────────────────────────────
+            }
         for key, value in mapping.items():
             if value and key in self.entries:
                 widget = self.entries[key]
@@ -673,27 +684,116 @@ class LocustGUI(ctk.CTk):
         if os.getenv("IP_VERSION", "ipv4") == "ipv6":
             self.ip_tab.set("IPv6")
 
-        # ── Stages —────────────────────────────
+        # ── Stages ─────────────────────────────
+        # HTTP/S stages are not stored in self._pages, so they must be
+        # initialized explicitly. Otherwise the HTTP/S page can open with
+        # only the table header and no default stage row.
         stages_raw = os.getenv("STAGES", "")
-        for tab_key in self._pages:
-            self._active_page = tab_key
-            q = self._pages[tab_key]
+        try:
+            loaded_stages = json.loads(stages_raw) if stages_raw else [dict(s) for s in STAGE_PRESETS["Stress"]]
+            if not isinstance(loaded_stages, list) or not loaded_stages:
+                loaded_stages = [dict(s) for s in STAGE_PRESETS["Stress"]]
+        except Exception:
+            loaded_stages = [dict(s) for s in STAGE_PRESETS["Stress"]]
+
+        prev_active_page = self._active_page
+
+        # HTTP/S default stages
+        self._stages = [dict(s) for s in loaded_stages]
+        http_stage_context = {
+            "stages": self._stages,
+            "stages_frame": self._stages_frame,
+            "stage_rows": self._stage_rows,
+            "stages_total_lbl": self._stages_total_lbl,
+            "hdr_min_lbl": self._hdr_min_lbl,
+            "hdr_max_lbl": self._hdr_max_lbl,
+            "preset_btn_widgets": self._preset_btns,
+        }
+        self._active_page = "HTTP/S"
+        self._render_stage_rows_for(http_stage_context)
+        self._stage_rows = http_stage_context["stage_rows"]
+
+        for name, btn in self._preset_btns.items():
+            is_default_stress = not stages_raw and name == "Stress"
+            btn.configure(
+                fg_color=C_ACTIVE if is_default_stress else C_ENTRY,
+                text_color="white" if is_default_stress else C_TEXT,
+            )
+
+        # TCP/UDP pages keep their own simpler stage tables.
+        for tab_key, q in self._pages.items():
             if not isinstance(q, dict) or "preset_btn_widgets" not in q:
                 continue
-            if stages_raw:
-                try:
-                    q["stages"] = json.loads(stages_raw)
-                    self._render_stage_rows()
-                    for btn in q["preset_btn_widgets"].values():
-                        btn.configure(fg_color=C_ENTRY, text_color=C_TEXT)
-                except Exception as e:
-                    self._load_preset("Stress")
+            self._active_page = tab_key
+            if not q.get("stages"):
+                q["stages"] = [{"duration": 60, "users": 10, "spawn_rate": 1, "packet_size": 60}]
+            self._render_stage_rows_for(q)
 
-            else:
-                self._load_preset("Stress")
+        self._active_page = prev_active_page
 
-    def _save_env_from_gui(self):
+    def _on_close(self):
+        if self._active_page in ("TCP", "UDP"):
+            self._save_tcp_udp_env()
+        elif self._active_page == "HTTP/S":
+            self._save_env_from_gui(log=False)
+        self.destroy()
+
+    def _load_tcp_udp_env(self):
+        load_dotenv(dotenv_path=os.path.join(BASE_DIR, "tcp_udp.env"), override=True)
+
+        _tcp_start = os.getenv('SCAN_PORT_RANGE_TCP_START', '')
+        _tcp_end = os.getenv('SCAN_PORT_RANGE_TCP_END', '')
+        if _tcp_start == '1' and _tcp_end == '65535':
+            src_ports = ''
+        elif _tcp_start == _tcp_end:
+            src_ports = _tcp_start
+        else:
+            src_ports = f"{_tcp_start}-{_tcp_end}"
+
+        print(f"[DEBUG] _tcp_start={repr(_tcp_start)}, _tcp_end={repr(_tcp_end)}, src_ports={repr(src_ports)}")
+        print(f"[DEBUG] src_ports in entries: {'src_ports' in self.entries}")
+
+        mapping = {
+            "tcp_processes": os.getenv("TCP_WORKERS"),
+            "udp_processes": os.getenv("UDP_WORKERS"),
+            "tcp_stop_timeout": os.getenv("TCP_STOP_TIMEOUT", "60"),
+            "udp_stop_timeout": os.getenv("UDP_STOP_TIMEOUT", "60"),
+            "tcp_target_rps": os.getenv("TCP_TARGET_RPS", "-1"),
+            "udp_target_rps": os.getenv("UDP_TARGET_RPS", "-1"),
+            "src_ports": src_ports,
+        }
+        for key, value in mapping.items():
+            if key in self.entries:
+                widget = self.entries[key]
+                widget.delete(0, "end")
+                if value:
+                    widget.insert(0, value)
+                print(f"[DEBUG] set {key} = {repr(value)}, widget now = {repr(widget.get())}")
+        for tab_key in ("TCP", "UDP"):
+            p = self._pages.get(tab_key)
+            if isinstance(p, dict) and "stages" in p:
+                stages_raw = os.getenv(f"{tab_key}_STAGES", "")
+                if stages_raw:
+                    try:
+                        stages = json.loads(stages_raw)
+                        p["stages"] = [{
+                            "duration": s.get("duration", 60),
+                            "users": s.get("users", 10),
+                            "spawn_rate": s.get("spawn_rate", 1),
+                            "packet_size": s.get("packet_size", 60),
+                        } for s in stages]
+                        self._render_stage_rows_for(p, simple_mode=True)
+                    except Exception as e:
+                        print(f"[WARN] Could not load stages for {tab_key}: {e}")
+
+    def _save_env_from_gui(self, log=True):
+        print(f"[DEBUG] saving page: {self._active_page.upper()}")
         env_path = os.path.join(BASE_DIR, "config.env")
+        # For TCP/UDP
+        _stages = self._get_stages()
+        _first_stage = _stages[0] if _stages else {}
+        _pfx = self._active_page.lower().replace("/", "_").replace(" ", "_")
+
         mapping = {
             "TARGET_HOST":     self.get("target"),
             "ENDPOINT_PATH":   normalize_endpoint_paths(self.get("endpoint_path") or "/"),
@@ -715,10 +815,10 @@ class LocustGUI(ctk.CTk):
             "CONNECT_TIMEOUT": self.get("connect_timeout") or "5",
             "READ_TIMEOUT":    self.get("read_timeout") or "15",
             "SSL_VERIFY":      "true" if self._ssl_verify_var.get() else "false",
-            "ACCEPT_ENCODING": "identity" if self._disable_compression_var.get() else "",
+            "ACCEPT_ENCODING": "identity" if getattr(self, "_disable_compression_var", tk.BooleanVar(value=False)).get() else "",
             "REACH_INTERVAL":  self.get("reach_interval"),
             "REACH_TIMEOUT":   self.get("reach_timeout"),
-            "TARGET_RPS": self.get(f"{self._active_page.lower().replace('/', '_').replace(' ', '_')}_target_rps"),
+            "TARGET_RPS": self._get_target_rps_value(),
             "REACH_SRC_IP":    self.get("reach_src_ip"),
             "REACH_INTERFACE": self.get("reach_interface"),
             "REQUEST_FAILURE_THRESHOLD": self.get("request_threshold") or "1",
@@ -758,10 +858,349 @@ class LocustGUI(ctk.CTk):
                         f"⚠ {label} '{val}' is invalid (must be 0–100 %). Skipping save."
                     )
                     return
+        print(f"[DEBUG] about to write config.env")
+        self._write_structured_env(env_path, mapping)
+        load_dotenv(dotenv_path=env_path, override=True)
 
-        for key, val in mapping.items():
-            set_key(env_path, key, val)
-        self.write_log("✓ Config saved to config.env")
+        if log:
+            self.write_log("✓ Config saved to config.env")
+
+    def _save_tcp_udp_env(self):
+        env_path = os.path.join(BASE_DIR, "tcp_udp.env")
+        _pfx = self._active_page.lower().replace("/", "_").replace(" ", "_")
+        _stages = self._get_stages()
+        _first_stage = _stages[0] if _stages else {}
+        _page_key = self._active_page.upper()
+
+        stop_val = self.get(f"{_pfx}_stop_timeout") or "60"
+        try:
+            assert float(stop_val) > 0
+        except (ValueError, AssertionError):
+            self.write_log(f"⚠ Stop timeout '{stop_val}' is invalid. Skipping save.")
+            return
+
+        existing = {}
+        if os.path.exists(env_path):
+            with open(env_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    k, v = line.split("=", 1)
+                    existing[k.strip()] = v.strip().strip("'\"")
+
+        existing[f"{_page_key}_STAGES"] = json.dumps(_stages)
+        existing[f"{_page_key}_WORKERS"] = self.get(f"{_pfx}_processes") or "-1"
+        existing[f"{_page_key}_STOP_TIMEOUT"] = stop_val
+        existing[f"{_page_key}_TARGET_RPS"] = self.get(f"{_pfx}_target_rps") or "-1"
+
+        _src_ports = self.get("src_ports").strip()
+        _parsed = parse_ports(_src_ports) if _src_ports else None
+
+        if not _src_ports:
+            _parsed = None
+        if _parsed and _src_ports:
+            existing["SCAN_PORT_RANGE_TCP_START"] = str(min(_parsed))
+            existing["SCAN_PORT_RANGE_TCP_END"] = str(max(_parsed))
+            existing["SCAN_PORT_RANGE_UDP_START"] = str(min(_parsed))
+            existing["SCAN_PORT_RANGE_UDP_END"] = str(max(_parsed))
+        else:
+            existing["SCAN_PORT_RANGE_TCP_START"] = existing.get("SCAN_PORT_RANGE_TCP_START", "1")
+            existing["SCAN_PORT_RANGE_TCP_END"] = existing.get("SCAN_PORT_RANGE_TCP_END", "65535")
+            existing["SCAN_PORT_RANGE_UDP_START"] = existing.get("SCAN_PORT_RANGE_UDP_START", "1")
+            existing["SCAN_PORT_RANGE_UDP_END"] = existing.get("SCAN_PORT_RANGE_UDP_END", "65535")
+        existing["PROTOCOL"] = self._active_page.upper()
+        existing["IPADDR"] = self.get("target")
+        existing["WORKERS"] = self.get(f"{_pfx}_processes") or "-1"
+        existing["PACKET_SIZE"] = str(_first_stage.get("packet_size", 60))
+        existing["TIME_TOTAL"] = str(sum(int(str(s.get("duration", 0))) for s in _stages))
+        existing["SPAWN_RATE"] = str(_first_stage.get("spawn_rate", 1))
+        existing["SCAN_PORT_RANGE_TCP_START"] = str(min(_parsed, default=1)) if _parsed else existing.get(
+            "SCAN_PORT_RANGE_TCP_START", "1")
+        existing["SCAN_PORT_RANGE_TCP_END"] = str(max(_parsed, default=65535)) if _parsed else existing.get(
+            "SCAN_PORT_RANGE_TCP_END", "65535")
+        existing["SCAN_PORT_RANGE_UDP_START"] = str(min(_parsed, default=1)) if _parsed else existing.get(
+            "SCAN_PORT_RANGE_UDP_START", "1")
+        existing["SCAN_PORT_RANGE_UDP_END"] = str(max(_parsed, default=65535)) if _parsed else existing.get(
+            "SCAN_PORT_RANGE_UDP_END", "65535")
+        existing["SOURCE_IP_MINIMAL"] = self.entries.get("ip_start") and self.entries["ip_start"].get().strip() or ""
+        existing["SOURCE_IP_MAXIMAL"] = self.entries.get("ip_end") and self.entries["ip_end"].get().strip() or ""
+        existing["UNIQUE_USERS_COUNT"] = str(_first_stage.get("users", 1))
+        existing["POLL_INTERVAL"] = self.get("reach_interval") or "1"
+        existing["INTERVAL"] = self.get("reach_interval") or "1"
+
+        sections = [
+            ("TCP STAGES", ["TCP_STAGES"]),
+            ("UDP STAGES", ["UDP_STAGES"]),
+            ("TCP PARAMETERS", ["TCP_WORKERS", "TCP_STOP_TIMEOUT", "TCP_TARGET_RPS"]),
+            ("UDP PARAMETERS", ["UDP_WORKERS", "UDP_STOP_TIMEOUT", "UDP_TARGET_RPS"]),
+            ("SHARED TCP/UDP", [
+                "PROTOCOL", "IPADDR", "WORKERS", "PACKET_SIZE", "TIME_TOTAL", "SPAWN_RATE",
+                "SCAN_PORT_RANGE_TCP_START", "SCAN_PORT_RANGE_TCP_END",
+                "SCAN_PORT_RANGE_UDP_START", "SCAN_PORT_RANGE_UDP_END",
+                "SOURCE_IP_MINIMAL", "SOURCE_IP_MAXIMAL", "UNIQUE_USERS_COUNT",
+                "POLL_INTERVAL", "INTERVAL",
+            ]),
+        ]
+
+        lines = [
+            "# ============================================================",
+            "#  Locust DP GUI - TCP/UDP Configuration",
+            "# ============================================================",
+            "# This file is generated by the GUI.",
+            "# Keep the filename lowercase: tcp_udp.env",
+            "# ============================================================",
+            "",
+        ]
+
+        written = set()
+        for title, keys in sections:
+            lines += [
+                "",
+                "# ============================================================",
+                f"#  {title}",
+                "# ============================================================",
+                "",
+            ]
+            for key in keys:
+                val = str(existing.get(key, "")).replace("\\", "\\\\").replace("'", "\\'")
+                lines.append(f"{key}='{val}'")
+                written.add(key)
+
+        with open(env_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines).strip() + "\n")
+
+        load_dotenv(dotenv_path=env_path, override=True)
+
+    def _get_target_rps_value(self):
+        """Return TARGET_RPS only for protocol pages that actually define it."""
+        page = str(getattr(self, "_active_page", ""))
+        if page == "TCP":
+            return self.get("tcp_target_rps") or "0"
+        if page == "UDP":
+            return self.get("udp_target_rps") or "0"
+        return ""
+
+    def _env_quote(self, value):
+        """Quote values safely for python-dotenv compatible .env files."""
+        if value is None:
+            value = ""
+        value = str(value)
+        value = value.replace("\\", "\\\\").replace("'", "\\'")
+        return f"'{value}'"
+
+
+    def _read_existing_env(self, env_path):
+        """Read existing .env values so legacy/experimental keys are not lost."""
+        values = {}
+        if not os.path.exists(env_path):
+            return values
+
+        try:
+            with open(env_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    raw = line.strip()
+                    if not raw or raw.startswith("#") or "=" not in raw:
+                        continue
+                    key, value = raw.split("=", 1)
+                    key = key.strip()
+                    value = value.strip()
+                    if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+                        value = value[1:-1]
+                    values[key] = value
+        except OSError:
+            return {}
+
+        return values
+
+    def _write_structured_env(self, env_path, mapping):
+        """Write config.env in stable sections instead of appending keys randomly.
+
+        python-dotenv's set_key() preserves existing comments, but if the file is
+        already messy or missing sections it keeps the mess. This writer always
+        regenerates the file in a predictable order so the GUI-created config is
+        readable after every save.
+        """
+        existing_mapping = self._read_existing_env(env_path)
+        full_mapping = dict(existing_mapping)
+        full_mapping.update(mapping)
+        mapping = full_mapping
+
+        sections = [
+            (
+                "TEST STAGES",
+                [
+                    "STAGES",
+                ],
+                [
+                    "STAGES - JSON list of test stages used by the GUI.",
+                ],
+            ),
+            (
+                "TARGET",
+                [
+                    "TARGET_HOST",
+                    "ENDPOINT_PATH",
+                    "INTERFACE",
+                    "TEST_TYPE",
+                ],
+                [
+                    "TARGET_HOST   - target URL or host.",
+                    "ENDPOINT_PATH - HTTP path used by the HTTP/S Locustfile.",
+                    "INTERFACE     - network interface used by IP/reachability tools.",
+                    "TEST_TYPE     - selected test mode from the GUI.",
+                ],
+            ),
+            (
+                "IP POOL - IPv4",
+                [
+                    "IP_VERSION",
+                    "IP_START",
+                    "IP_END",
+                    "IPV4PREFIX",
+                ],
+                [
+                    "IP_VERSION - ipv4 or ipv6.",
+                    "IP_START   - first IPv4 address in the generated pool.",
+                    "IP_END     - last IPv4 address in the generated pool.",
+                    "IPV4PREFIX - prefix length written to ip_pool.txt.",
+                ],
+            ),
+            (
+                "IP POOL - IPv6",
+                [
+                    "IP6_START",
+                    "IP6_END",
+                    "IP6_PREFIX",
+                    "IPV6_MODE",
+                    "IPV6RPREFIX",
+                ],
+                [
+                    "IP6_START   - first IPv6 address for range mode.",
+                    "IP6_END     - last IPv6 address for range mode.",
+                    "IP6_PREFIX  - IPv6 network prefix.",
+                    "IPV6_MODE   - range or prefix based generation.",
+                    "IPV6RPREFIX - prefix length written to ip_pool.txt.",
+                ],
+            ),
+            (
+                "HTTP/S TEST",
+                [
+                    "PROCESSES",
+                    "HTTP_METHOD",
+                    "REQUEST_BODY",
+                    "STOP_TIMEOUT",
+                    "CONNECT_TIMEOUT",
+                    "READ_TIMEOUT",
+                    "SSL_VERIFY",
+                    "ACCEPT_ENCODING",
+                    "TARGET_RPS",
+                ],
+                [
+                    "PROCESSES       - Locust worker process count (-1 = automatic).",
+                    "HTTP_METHOD     - GET, POST, PUT, DELETE, ...",
+                    "REQUEST_BODY    - body sent with HTTP methods that support payloads.",
+                    "STOP_TIMEOUT    - graceful Locust stop timeout.",
+                    "CONNECT_TIMEOUT - connection timeout for HTTP/S requests.",
+                    "READ_TIMEOUT    - read timeout for HTTP/S responses.",
+                    "SSL_VERIFY      - true/false certificate validation.",
+                    "ACCEPT_ENCODING - identity disables compression.",
+                    "TARGET_RPS      - optional RPS limit used by TCP/UDP pages; empty for HTTP/S.",
+                ],
+            ),
+            (
+                "TCP/UDP EXPERIMENTAL TESTS",
+                [
+                    "PROTOCOL",
+                    "IPADDR",
+                    "WORKERS",
+                    "PACKET_SIZE",
+                    "TIME_TOTAL",
+                    "SPAWN_RATE",
+                    "SCAN_PORT_RANGE_TCP_START",
+                    "SCAN_PORT_RANGE_TCP_END",
+                    "SCAN_PORT_RANGE_UDP_START",
+                    "SCAN_PORT_RANGE_UDP_END",
+                    "SOURCE_IP_MINIMAL",
+                    "SOURCE_IP_MAXIMAL",
+                    "UNIQUE_USERS_COUNT",
+                    "POLL_INTERVAL",
+                    "INTERVAL",
+                ],
+                [
+                    "These values are kept for the merged TCP/UDP prototype part.",
+                    "HTTP/S testing does not depend on this section.",
+                ],
+            ),
+            (
+                "REACHABILITY",
+                [
+                    "REACH_INTERVAL",
+                    "REACH_TIMEOUT",
+                    "REACH_SRC_IP",
+                    "REACH_INTERFACE",
+                ],
+                [
+                    "REACH_INTERVAL  - interval between reachability checks.",
+                    "REACH_TIMEOUT   - timeout for one reachability check.",
+                    "REACH_SRC_IP    - source IP used by reachability checks.",
+                    "REACH_INTERFACE - interface used by reachability checks.",
+                ],
+            ),
+            (
+                "REPORT THRESHOLDS",
+                [
+                    "REQUEST_FAILURE_THRESHOLD",
+                    "REACH_THRESHOLD",
+                ],
+                [
+                    "REQUEST_FAILURE_THRESHOLD - failure threshold in percent.",
+                    "REACH_THRESHOLD           - reachability threshold in percent.",
+                ],
+            ),
+        ]
+
+        lines = [
+            "# ============================================================",
+            "#  Locust DP GUI - Configuration file",
+            "# ============================================================",
+            "# This file is generated by the GUI.",
+            "# Values can be overwritten after saving settings in the application.",
+            "# Keep the filename lowercase: config.env",
+            "# ============================================================",
+            "",
+        ]
+
+        written = set()
+        for title, keys, description in sections:
+            lines.extend([
+                "",
+                "# ============================================================",
+                f"#  {title}",
+                "# ============================================================",
+            ])
+            for comment in description:
+                lines.append(f"# {comment}")
+            lines.append("")
+
+            for key in keys:
+                lines.append(f"{key}={self._env_quote(mapping.get(key, ''))}")
+                written.add(key)
+
+        extra_keys = [key for key in mapping if key not in written]
+        if extra_keys:
+            lines.extend([
+                "",
+                "# ============================================================",
+                "#  OTHER",
+                "# ============================================================",
+                "",
+            ])
+            for key in extra_keys:
+                lines.append(f"{key}={self._env_quote(mapping.get(key, ''))}")
+
+        with open(env_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines).strip() + "\n")
 
     # ================================================================
     # ZOOM
@@ -830,7 +1269,6 @@ class LocustGUI(ctk.CTk):
     def _build_sidebar(self):
         sidebar = ctk.CTkFrame(self, width=200, corner_radius=0, fg_color=C_SIDEBAR)
         sidebar.grid(row=0, column=0, sticky="nsew")
-        sidebar.grid_rowconfigure(8, weight=1)
         sidebar.grid_propagate(False)
 
         ctk.CTkLabel(
@@ -864,13 +1302,22 @@ class LocustGUI(ctk.CTk):
             btn.grid(row=3+i, column=0, padx=10, pady=3, sticky="ew")
             self._nav_buttons[label] = btn
 
-        ctk.CTkFrame(sidebar, height=1, fg_color="#2a3a5e"
-                     ).grid(row=9, column=0, padx=12, pady=12, sticky="ew")
+        # Empty expandable row below the navigation menu.
+        # Row 8 contains the "Reports" button, therefore the spacer must be row 9.
+        sidebar.grid_rowconfigure(9, weight=1)
 
-        ctk.CTkLabel(sidebar, text="THEME",
-                     font=ctk.CTkFont(size=10, weight="bold"),
-                     text_color=C_MUTED
-                     ).grid(row=9, column=0, padx=20, pady=(4, 2), sticky="w")
+        ctk.CTkFrame(
+            sidebar,
+            height=1,
+            fg_color="#2a3a5e"
+        ).grid(row=10, column=0, padx=12, pady=12, sticky="ew")
+
+        ctk.CTkLabel(
+            sidebar,
+            text="THEME",
+            font=ctk.CTkFont(size=10, weight="bold"),
+            text_color=C_MUTED
+        ).grid(row=11, column=0, padx=20, pady=(4, 2), sticky="w")
 
         self._theme_combo = ctk.CTkComboBox(
             sidebar,
@@ -884,13 +1331,14 @@ class LocustGUI(ctk.CTk):
             command=self._change_theme
         )
         self._theme_combo.set(self._current_theme)
-        self._theme_combo.grid(row=10, column=0, padx=(15, 0), pady=(0, 8), sticky="w")
+        self._theme_combo.grid(row=12, column=0, padx=(15, 0), pady=(0, 8), sticky="w")
 
         ctk.CTkLabel(
-            sidebar, text="v0.1  •  2026",
+            sidebar,
+            text="v0.1  •  2026",
             font=ctk.CTkFont(size=10),
             text_color=C_MUTED
-        ).grid(row=11, column=0, padx=20, pady=(0, 16), sticky="w")
+        ).grid(row=13, column=0, padx=20, pady=(0, 16), sticky="w")
 
     # ================================================================
     # MAIN CONTENT AREA
@@ -1031,6 +1479,10 @@ class LocustGUI(ctk.CTk):
         self.after(100, self._set_sash_default) # type: ignore
 
     def _show_page(self, name):
+        if self._active_page and self._active_page in ("TCP", "UDP"):
+            self._save_tcp_udp_env()
+        elif self._active_page == "HTTP/S":
+            self._save_env_from_gui(log=False)
         for label, btn in self._nav_buttons.items():
             if label == name:
                 btn.configure(fg_color=C_ACTIVE, text_color="white",
@@ -1046,7 +1498,8 @@ class LocustGUI(ctk.CTk):
         icon = next(ic for ic, lb in self.NAV_ITEMS if lb == name)
         self.page_title.configure(text=f"{icon}  {name}")
         self._active_page = name
-
+        if name in ("TCP", "UDP"):
+            self._load_tcp_udp_env()
     def _set_sash_default(self):
         total = self._paned.winfo_height()
         self._paned.sash_place(0, 0, total - 200)
@@ -1108,43 +1561,6 @@ class LocustGUI(ctk.CTk):
         CTkToolTip(ssl_cb,
                    message="When disabled, HTTPS requests do not verify the server certificate.\nUseful for testing self-signed certificates",
                    delay=0.3, x_offset=10, y_offset=-10)
-        # Disable compression checkbox
-        self._disable_compression_var = ctk.BooleanVar(
-            value=os.getenv("ACCEPT_ENCODING", "").strip().lower() == "identity"
-        )
-
-        compression_cb = ctk.CTkCheckBox(
-            card,
-            text="Disable compression",
-            variable=self._disable_compression_var,
-            font=ctk.CTkFont(size=13),
-            text_color=C_TEXT,
-            fg_color=C_ACTIVE,
-            hover_color=C_HOVER,
-            border_color=C_MUTED,
-        )
-
-        compression_cb.grid(
-            row=3,
-            column=2,
-            columnspan=2,
-            padx=(16, 8),
-            pady=(0, 12),
-            sticky="w"
-        )
-
-        CTkToolTip(
-            compression_cb,
-            message=(
-                "Sends Accept-Encoding: identity.\n"
-                "Use this when measuring real network throughput.\n"
-                "When disabled, the server may return compressed responses."
-            ),
-            delay=0.3,
-            x_offset=10,
-            y_offset=-10
-        )
-
 
         # ── IP Pool ───────────────────────────────────────────────
         row = self._card_header(scroll, "IP Pool", row)
@@ -1407,18 +1823,19 @@ class LocustGUI(ctk.CTk):
         self._stages_frame.grid_columnconfigure(1, minsize=180, weight=1)
         self._stages_frame.grid_columnconfigure(2, minsize=180, weight=1)
         self._stages_frame.grid_columnconfigure(3, minsize=130, weight=0)
-        self._stages_frame.grid_columnconfigure(4, minsize=55,  weight=0)
-        self._stages_frame.grid_columnconfigure(5, minsize=55,  weight=0)
-        self._stages_frame.grid_columnconfigure(6, minsize=30,  weight=0)
+        self._stages_frame.grid_columnconfigure(4, minsize=55, weight=0)
+        self._stages_frame.grid_columnconfigure(5, minsize=55, weight=0)
+        self._stages_frame.grid_columnconfigure(6, minsize=30, weight=0)
         self._hdr_min_lbl = None
         self._hdr_max_lbl = None
         for col, (txt, help_txt) in enumerate([
             ("Duration (s)", "Duration of this stage only.\nExample: 60, 120, 120 means total test time 300 seconds."),
-            ("Users",        None),
-            ("Spawn rate",   None),
-            ("Wait mode",    "between – random wait between Min and Max\nconstant – fixed wait of Min seconds\nconstant_throughput – Min = target RPS per user"),
-            ("Min",          "between: minimum wait (s)\nconstant: fixed wait (s)\nconstant_throughput: target RPS"),
-            ("Max",          "between: maximum wait (s)\nIgnored in other modes"),
+            ("Users", None),
+            ("Spawn rate", None),
+            ("Wait mode",
+             "between – random wait between Min and Max\nconstant – fixed wait of Min seconds\nconstant_throughput – Min = target RPS per user"),
+            ("Min", "between: minimum wait (s)\nconstant: fixed wait (s)\nconstant_throughput: target RPS"),
+            ("Max", "between: maximum wait (s)\nIgnored in other modes"),
         ]):
             lbl = ctk.CTkLabel(
                 self._stages_frame,
@@ -1427,7 +1844,7 @@ class LocustGUI(ctk.CTk):
                 text_color=C_MUTED, anchor="w",
                 cursor="question_arrow" if help_txt else "arrow"
             )
-            lbl.grid(row=0, column=col, padx=(0,4), pady=4, sticky="w")
+            lbl.grid(row=0, column=col, padx=(0, 4), pady=4, sticky="w")
             if help_txt:
                 CTkToolTip(lbl, message=help_txt, delay=0.3, x_offset=10, y_offset=-10)
             if txt == "Min":
@@ -1451,7 +1868,8 @@ class LocustGUI(ctk.CTk):
 
         # ── Locust Parameters ─────────────────────────────────────
         s_row = self._card_header(scroll, "Locust Parameters", s_row)
-        card = self._card(scroll, s_row); s_row += 1
+        card = self._card(scroll, s_row)
+        s_row += 1
         self._field_row(card, 0, "Stop timeout (s)", "stop_timeout", "60", col=0,
                         help="Time (seconds) Locust waits for running users to finish\ntheir current task after the test ends.\nIncrease for long-running requests.")
         self._field_row(card, 0, "Processes", "processes", "-1", col=2,
@@ -1490,6 +1908,17 @@ class LocustGUI(ctk.CTk):
         self._http_method_combo.grid(row=0, column=1, padx=(0, 16), pady=10, sticky="ew")
 
         self.entries["http_method"] = self._http_method_combo
+
+        self._disable_compression_var = tk.BooleanVar(value=os.getenv("ACCEPT_ENCODING", "").strip().lower() == "identity")
+        ctk.CTkCheckBox(
+            card_req,
+            text="Disable compression",
+            variable=self._disable_compression_var,
+            fg_color=C_ACTIVE,
+            hover_color=C_HOVER,
+            text_color=C_TEXT
+        ).grid(row=0, column=2, columnspan=2, padx=(16, 16), pady=10, sticky="w")
+
         self._request_body_frame = ctk.CTkFrame(card_req, fg_color="transparent")
         self._request_body_frame.grid(row=1, column=0, columnspan=4, sticky="ew")
         self._request_body_frame.grid_columnconfigure(1, weight=1)
@@ -1853,7 +2282,6 @@ class LocustGUI(ctk.CTk):
         active = self._active_page
         pfx = active.lower().replace("/", "_").replace(" ", "_")
 
-        default_lf = DEFAULT_LOCUSTFILES.get(active, "Locustfile_http.py")
         scan_range = self.entries.get("src_ports")
         scan_range = scan_range.get().strip() if scan_range else ""
         parsed = parse_ports(scan_range)
@@ -1878,8 +2306,7 @@ class LocustGUI(ctk.CTk):
             "iface": self.entries["interface"].get().strip(),
             "stop_timeout": self.entries.get(f"{pfx}_stop_timeout", None) and self.entries[
                 f"{pfx}_stop_timeout"].get().strip(),
-            "target_rps": target_rps,
-            "locustfile": self._locustfile_paths.get(active) or os.path.join(BASE_DIR, "locust_tests", default_lf),
+            "target_rps": target_rps
         }
 
     # ================================================================
@@ -1961,9 +2388,10 @@ class LocustGUI(ctk.CTk):
             self._render_stage_rows_for(p)
             self._stage_rows = p["stage_rows"]
 
-    def _render_stage_rows_for(self, p):
-        simple_mode = self._active_page in ("TCP", "UDP") if self._active_page else "wait_mode" not in (
-            p["stages"][0] if p["stages"] else {})
+    def _render_stage_rows_for(self, p, simple_mode=None):
+        if simple_mode is None:
+            simple_mode = self._active_page in ("TCP", "UDP") if self._active_page else "wait_mode" not in (
+                p["stages"][0] if p["stages"] else {})
         frame = p["stages_frame"]
         for w in frame.winfo_children():
             if int(w.grid_info().get("row", 0)) >= 1:
@@ -2108,7 +2536,7 @@ class LocustGUI(ctk.CTk):
                     stage["wait_max"] = wait_max
                 stages.append(stage)
             except (ValueError, KeyError) as e:
-                print(f"[WARN] Stage row {i+1} skipped: {e}")
+                print(f"[WARN] Stage row {i + 1} skipped: {e}")
         return stages
     def _update_stage_totals(self, p=None):
         if p is None:
@@ -2156,9 +2584,9 @@ class LocustGUI(ctk.CTk):
             )
     def _save_stages(self):
         stages = self._get_stages()
-        with open(os.path.join(BASE_DIR, "stages.json"), "w") as f:
+        with open(os.path.join(BASE_DIR, "stages.json"), "w", encoding="utf-8") as f:
             json.dump(stages, f)
-        set_key(os.path.join(BASE_DIR, "config.env"), "STAGES", json.dumps(stages))
+        self._save_env_from_gui(log=False)
         self.write_log(f"✓ Stages saved ({len(stages)} stages)")
         return stages
 
@@ -2430,7 +2858,7 @@ class LocustGUI(ctk.CTk):
             self.write_log(f"✓ Locustfile: {os.path.basename(path)}")
 
     def _clear_locustfile(self):
-        self._locustfile_paths.pop(self._active_page, None)
+        self.locustfile_path = None
         if self._active_page in self._pages and isinstance(self._pages.get(self._active_page), dict):
             self._pages[self._active_page]["locustfile_label"].configure(
                 text="", text_color=C_MUTED
@@ -2440,7 +2868,7 @@ class LocustGUI(ctk.CTk):
                 text="default: Locustfile_http.py", text_color=C_MUTED
             )
         if self._active_page in self._locustfile_paths:
-            del self._locustfile_paths[self._active_page]
+            self._locustfile_paths[self._active_page] = None
 
     def _delete_data(self):
         deleted = []
@@ -2522,7 +2950,9 @@ class LocustGUI(ctk.CTk):
         outer = ctk.CTkFrame(parent, fg_color="transparent", corner_radius=0)
         outer.grid(row=0, column=0, sticky="nsew")
         outer.grid_columnconfigure(0, weight=1)
-        outer.grid_rowconfigure(2, weight=0)
+        outer.grid_rowconfigure(0, weight=0)
+        outer.grid_rowconfigure(1, weight=0)
+        outer.grid_rowconfigure(2, weight=1)
 
         toolbar = ctk.CTkFrame(outer, fg_color=C_CARD, corner_radius=0, height=44)
         toolbar.grid(row=0, column=0, sticky="ew", padx=0, pady=(0, 1))
@@ -2948,6 +3378,7 @@ class LocustGUI(ctk.CTk):
     # GENERIC HELPERS
     # ================================================================
 
+
     # ================================================================
     # OPEN FILE  (platform helper – used by report generator & report list)
     # ================================================================
@@ -2991,11 +3422,22 @@ class LocustGUI(ctk.CTk):
         self.log.configure(state="disabled")
         self.statusbar.configure(text="●  Log cleared")
 
-    def get(self, key, default=""):
-        entry = self.entries.get(key)
-        if entry is None:
-            return default
-        return entry.get().strip()
+    def get(self, key):
+        """Return a GUI entry value safely.
+
+        The merged GUI contains page-specific fields only for some tabs
+        (for example tcp_target_rps/udp_target_rps, but no http_target_rps).
+        Returning an empty string for missing optional fields prevents the
+        HTTP/S workflow from failing with KeyError while keeping the existing
+        `... or fallback` logic in the caller.
+        """
+        widget = self.entries.get(key)
+        if widget is None:
+            return ""
+        try:
+            return widget.get().strip()
+        except AttributeError:
+            return ""
     def get_request_body(self):
         if not hasattr(self, "request_body_text"):
             return ""
@@ -3035,6 +3477,40 @@ class LocustGUI(ctk.CTk):
                 self.write_log(f"ℹ Source ports: OS ephemeral range {lo}–{hi}")
             except Exception:
                 self.write_log("ℹ Source ports: OS assigned automatically")
+
+    def _read_ip_pool_summary(self):
+        """Return active IP pool count and display range from ip_pool.txt.
+
+        The PDF report uses this snapshot. If the pool file is missing or empty,
+        the report should not guess values from the GUI fields because those may
+        no longer match the IPs actually assigned to the interface.
+        """
+        pool_file = os.path.join(BASE_DIR, "ip_pool.txt")
+        pool_count = 0
+        pool_range = ""
+
+        if not os.path.exists(pool_file):
+            return pool_count, pool_range
+
+        try:
+            entries = [entry for entry in parse_pool_lines(pool_file) if entry and entry[0]]
+        except Exception:
+            return pool_count, pool_range
+
+        pool_count = len(entries)
+
+        if entries:
+            first_ip, first_prefix = entries[0]
+            last_ip, last_prefix = entries[-1]
+            first_prefix = first_prefix or self._get_prefix_len()
+            last_prefix = last_prefix or first_prefix
+
+            if pool_count == 1:
+                pool_range = f"{first_ip}/{first_prefix}"
+            else:
+                pool_range = f"{first_ip}/{first_prefix} - {last_ip}/{last_prefix}"
+
+        return pool_count, pool_range
 
     def _save_test_config(self, script_dir):
         config_file  = os.path.join(script_dir, "test_config.csv")
@@ -3082,17 +3558,7 @@ class LocustGUI(ctk.CTk):
         src_ip      = self.get("reach_src_ip")    or self._get_ip_start()
         reach_iface = self.get("reach_interface") or self.get("interface")
 
-        pool_file  = os.path.join(BASE_DIR, "ip_pool.txt")
-        pool_count = 0
-        pool_ips   = ""
-        if os.path.exists(pool_file):
-            entries = parse_pool_lines(pool_file)
-            pool_count = len(entries)
-            if entries:
-                first_ip = entries[0][0]
-                last_ip  = entries[-1][0]
-                prefix   = entries[0][1] or self._get_prefix_len()
-                pool_ips = f"{first_ip}/{prefix} - {last_ip}/{prefix}"
+        pool_count, pool_ips = self._read_ip_pool_summary()
 
         with open(config_file, "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=[
@@ -3127,12 +3593,12 @@ class LocustGUI(ctk.CTk):
                 "reach_threshold":  self.get("reach_threshold") or "5",
                 "http_method":      self.get("http_method") or "GET",
                 "endpoint_path":    normalize_endpoint_paths(self.get("endpoint_path") or "/"),
-                "processes":        self.get("processes"),
+                "processes":        processes,
                 "stop_timeout":     self.get("stop_timeout") or "60",
                 "connect_timeout":  self.get("connect_timeout") or "5",
                 "read_timeout":     self.get("read_timeout") or "15",
                 "test_type":        self.get("test_type"),
-                "target_rps": self.get(f"{self._active_page.lower().replace('/', '_').replace(' ', '_')}_target_rps"),
+                "target_rps": self.get(f"{str(self._active_page).replace('/S', '').lower()}_target_rps") or "0",
             })
         self.write_log(f"✓ Config saved → {target_clean} ({resolved_ip}) [{ip_ver.upper()}]")
 
@@ -3154,40 +3620,49 @@ class LocustGUI(ctk.CTk):
             try:
                 cfg = pd.read_csv(config_file).iloc[0]
 
-                target_clean  = _clean_csv_value(cfg.get("target_clean", ""), self._get_target_clean())
-                target_ip     = _clean_csv_value(cfg.get("target_ip", ""), target_clean)
-                source_range  = _clean_csv_value(cfg.get("source_range", ""), self._get_source_range())
+                target_clean = _clean_csv_value(cfg.get("target_clean", ""), "")
+                target_ip = _clean_csv_value(cfg.get("target_ip", ""), target_clean)
+                source_range = _clean_csv_value(cfg.get("source_range", ""), "")
                 ip_pool_count = _clean_csv_value(cfg.get("ip_pool_count", ""), "")
                 ip_pool_range = _clean_csv_value(cfg.get("ip_pool_range", ""), "")
-                interface     = _clean_csv_value(cfg.get("interface", ""), self.get("interface"))
 
-                reach_src_ip       = _clean_csv_value(cfg.get("reach_src_ip", ""), self.get("reach_src_ip") or self._get_ip_start())
-                reach_interface    = _clean_csv_value(cfg.get("reach_interface", ""), self.get("reach_interface") or self.get("interface"))
-                reach_interval_cfg = _clean_csv_value(cfg.get("reach_interval", ""), self.get("reach_interval") or "5")
-                reach_timeout_cfg  = _clean_csv_value(cfg.get("reach_timeout", ""), self.get("reach_timeout") or "5")
+                # Backward-compatible fallback for reports generated from older
+                # test_config.csv files that did not contain IP pool metadata.
+                if not ip_pool_count or ip_pool_count == "0":
+                    fallback_count, fallback_range = self._read_ip_pool_summary()
+                    if fallback_count:
+                        ip_pool_count = str(fallback_count)
+                        if not ip_pool_range:
+                            ip_pool_range = fallback_range
+
+                interface = _clean_csv_value(cfg.get("interface", ""), "")
+
+                reach_src_ip = _clean_csv_value(cfg.get("reach_src_ip", ""), "")
+                reach_interface = _clean_csv_value(cfg.get("reach_interface", ""), "")
+                reach_interval_cfg = _clean_csv_value(cfg.get("reach_interval", ""), "5")
+                reach_timeout_cfg = _clean_csv_value(cfg.get("reach_timeout", ""), "5")
 
                 src_ports = _clean_csv_value(cfg.get("src_ports", ""), "")
 
                 request_threshold = float(
-                    _clean_csv_value(cfg.get("request_threshold", ""), self.get("request_threshold") or "1")
+                    _clean_csv_value(cfg.get("request_threshold", ""), "1")
                 )
                 reach_threshold = float(
-                    _clean_csv_value(cfg.get("reach_threshold", ""), self.get("reach_threshold") or "5")
+                    _clean_csv_value(cfg.get("reach_threshold", ""), "5")
                 )
 
-                test_type_cfg = _clean_csv_value(cfg.get("test_type", ""), self.get("test_type"))
-                processes     = _clean_csv_value(cfg.get("processes", ""), self.get("processes"))
-                stop_timeout  = _clean_csv_value(cfg.get("stop_timeout", ""), self.get("stop_timeout") or "60")
+                test_type_cfg = _clean_csv_value(cfg.get("test_type", ""), "")
+                processes = _clean_csv_value(cfg.get("processes", ""), "")
 
                 stop_timeout = _clean_csv_value(cfg.get("stop_timeout", ""), "60")
                 target_rps = _clean_csv_value(cfg.get("target_rps", ""), "0")
 
                 http_method = _clean_csv_value(cfg.get("http_method", ""), "GET")
                 endpoint_path = normalize_endpoint_paths(
-                    _clean_csv_value(cfg.get("endpoint_path", ""), self.get("endpoint_path") or "/")
+                    _clean_csv_value(cfg.get("endpoint_path", ""), "/")
                 )
-                connect_timeout = _clean_csv_value(cfg.get("connect_timeout", ""), self.get("connect_timeout") or "5")
-                read_timeout    = _clean_csv_value(cfg.get("read_timeout", ""), self.get("read_timeout") or "15")
+                connect_timeout = _clean_csv_value(cfg.get("connect_timeout", ""), "5")
+                read_timeout = _clean_csv_value(cfg.get("read_timeout", ""), "15")
 
                 self.write_log(
                     f"✓ Params: {target_clean} | {source_range} | "
@@ -3202,31 +3677,15 @@ class LocustGUI(ctk.CTk):
                     src_ports, reach_interval_cfg, reach_timeout_cfg, reach_interface, target_rps,
                 )
 
+
             except Exception as e:
+
                 self.write_log(f"⚠ Error reading config: {e}")
 
-        return (
-            self._get_target_clean(),
-            self._get_target_clean(),
-            self._get_source_range(),
-            self.get("interface"),
-            float(self.get("request_threshold") or 1),
-            float(self.get("reach_threshold") or 5),
-            self.get("test_type"),
-            self.get("processes"),
-            self.get("stop_timeout") or "60",
-            self.get("reach_src_ip") or self._get_ip_start(),
-            "0",
-            "",
-            self.get("http_method") or "GET",
-            normalize_endpoint_paths(self.get("endpoint_path") or "/"),
-            self.get("connect_timeout") or "5",
-            self.get("read_timeout") or "15",
-            self.get("src_ports") or "",
-            self.get("reach_interval") or "5",
-            self.get("reach_timeout") or "5",
-            self.get("reach_interface") or self.get("interface"),
-        )
+        self.write_log("⚠ No test_config.csv found — please run a test first before generating a report.")
+
+        raise FileNotFoundError("test_config.csv not found or unreadable")
+
     # ================================================================
     # SETUP
     # ================================================================
@@ -3386,6 +3845,21 @@ class LocustGUI(ctk.CTk):
             f"({len(entries)} entries, default /{default_prefix})"
         )
 
+
+    def _default_locustfile_for_page(self, page=None):
+        """Return the default Locustfile for the selected GUI page."""
+        page = page or self._active_page
+        defaults = {
+            "HTTP/S": os.path.join(BASE_DIR, "locust_tests", "Locustfile_http.py"),
+            "TCP": os.path.join(BASE_DIR, "locust_tests", "Locust_tcp.py"),
+            "UDP": os.path.join(BASE_DIR, "locust_tests", "Locust_udp.py"),
+        }
+        return defaults.get(page)
+
+    def _selected_locustfile_for_page(self, page=None):
+        page = page or self._active_page
+        return self._locustfile_paths.get(page) or self._default_locustfile_for_page(page)
+
     # ================================================================
     # RUN TEST
     # ================================================================
@@ -3396,45 +3870,33 @@ class LocustGUI(ctk.CTk):
         if not self._validate_fields():
             return
 
-        path = self._locustfile_paths.get(active)
-
+        path = self._selected_locustfile_for_page(active)
         if not path or not os.path.isfile(path):
-            default_lf = DEFAULT_LOCUSTFILES.get(active)
-            if default_lf:
-                path = os.path.join(BASE_DIR, "locust_tests", default_lf)
-                self._locustfile_paths[active] = path
-            else:
-                self.write_log(f"✗ [{active}] No locustfile selected.")
-                return
+            self.write_log(f"✗ [{active}] Locustfile not found: {path}")
+            return
 
+        self.locustfile_path = path
+        self._locustfile_paths[active] = path
         self._stop_requested = False
         self._set_stop_enabled(True)
         threading.Thread(target=self._run_test_thread, daemon=True).start()
 
-        if self._active_page in self._pages and isinstance(self._pages.get(self._active_page), dict):
-            p = self._pages[self._active_page]
-            p["runbtn"].configure(state="disabled")
-            p["stopbtn"].configure(state="normal")
-        else:
-            self.runbtn.configure(state="disabled")
-            self.stopbtn.configure(state="normal")
-
     def _set_stop_enabled(self, enabled):
-        self._stop_enabled = enabled
+        self._stop_enabled = bool(enabled)
         p = self._pages.get(self._active_page)
 
-        if isinstance(p, dict) and "runbtn" in p:
-            runbtn = p["runbtn"]
-            stopbtn = p["stopbtn"]
+        if p is not None and isinstance(p, dict) and "runbtn" in p and "stopbtn" in p:
+            run_button = p["runbtn"]
+            stop_button = p["stopbtn"]
         else:
-            runbtn = getattr(self, "runbtn", None)
-            stopbtn = getattr(self, "stopbtn", None)
+            run_button = getattr(self, "runbtn", None)
+            stop_button = getattr(self, "stopbtn", None)
 
-        if not runbtn or not stopbtn:
+        if run_button is None or stop_button is None:
             return
 
         if enabled:
-            runbtn.configure(
+            run_button.configure(
                 fg_color="#B7950B",
                 hover_color="#B7950B",
                 text="⏳ Running...",
@@ -3442,16 +3904,15 @@ class LocustGUI(ctk.CTk):
                 state="disabled",
                 command=lambda: None
             )
-            stopbtn.configure(
+            stop_button.configure(
                 fg_color=C_DANGER,
                 hover_color=darken(C_DANGER, 25),
                 text_color="white",
                 state="normal",
                 command=self.stop_locust
             )
-
         else:
-            runbtn.configure(
+            run_button.configure(
                 fg_color=C_SUCCESS,
                 hover_color=darken(C_SUCCESS, 25),
                 text="▶ Start Test",
@@ -3459,7 +3920,7 @@ class LocustGUI(ctk.CTk):
                 state="normal",
                 command=self.run_test
             )
-            stopbtn.configure(
+            stop_button.configure(
                 fg_color="#3a3a3a",
                 hover_color="#3a3a3a",
                 text_color="#aaaaaa",
@@ -3557,8 +4018,16 @@ class LocustGUI(ctk.CTk):
                 os.path.join(output_dir, "report_stats.csv"), index=False
             )
     def _run_test_thread(self):
-        locustfile = self._locustfile_paths.get(self._active_page)
+        locustfile = self._selected_locustfile_for_page(self._active_page)
 
+        if not locustfile or not os.path.isfile(locustfile):
+            self.write_log(f"✗ Locustfile not found: {locustfile}")
+            self._set_stop_enabled(False)
+            return
+
+        if not self._validate_fields():
+            self._set_stop_enabled(False)
+            return
         # ================================================================
         # TCP/UDP
         # ================================================================
@@ -3598,7 +4067,6 @@ class LocustGUI(ctk.CTk):
                     protocol=params["protocol"],
                     range_start=params["range_start"],
                     range_end=params["range_end"],
-                    stop_event=self._reach_stop_event,
                 )
                 self.write_log(f"✓ Using port {port} for all stages.")
 
@@ -3701,10 +4169,8 @@ class LocustGUI(ctk.CTk):
             self.write_log("▶ Starting Locust test...")
             self.write_log("-" * 60)
             cmd = [
-                "locust", "-f",
-                self._locustfile_paths.get(self._active_page) or
-                os.path.join(BASE_DIR, "locust_tests", "Locustfile_http.py"
-                ),
+                sys.executable, "-m", "locust", "-f",
+                locustfile,
                 "--headless",
                 "-H",             self.get("target"),
                 "--stop-timeout", self.get("stop_timeout") or "60",
@@ -3746,6 +4212,7 @@ class LocustGUI(ctk.CTk):
                 self._network_monitor = None
                 self.write_log("📡 Network monitor stopped")
             self._set_stop_enabled(False)
+
     # ================================================================
     # terminate process
     # ================================================================
@@ -3806,11 +4273,11 @@ class LocustGUI(ctk.CTk):
             pass
 
         # Stop Locust master + all worker processes
-        if self.locust_process:
-            try:
-                os.killpg(os.getpgid(self.locust_process.pid), signal.SIGTERM)
-            except Exception as e:
-                self.write_log(f"⚠ Could not kill process group: {e}")
+        self._terminate_process_group(
+            self.locust_process,
+            name="Locust",
+            timeout=5
+        )
 
         # Stop network monitor immediately as well
         try:
@@ -3822,21 +4289,26 @@ class LocustGUI(ctk.CTk):
             self.write_log(f"⚠ Network monitor stop error: {e}")
 
         self._set_stop_enabled(False)
-        self.write_log("✓ Test stopped by user")
+        if self._active_page in self._pages and isinstance(self._pages.get(self._active_page), dict):
+            p = self._pages[self._active_page]
+            p["runbtn"].configure(state="normal")
+            p["stopbtn"].configure(state="disabled")
+        else:
+            self.runbtn.configure(state="normal")
+            self.stopbtn.configure(state="disabled")
 
     def _run_reachability(self, duration, interval, ipaddr = None):
         self._reach_stop_event.clear()
-        self.write_log(
-            f"DEBUG: _run_reachability called, page={self._active_page}, duration={duration}, interval={interval}")
         try:
             if self._active_page in ("TCP","UDP"):
-                self.write_log("DEBUG: Starting Watchdog")
+                self.write_log("▶ Starting TCP/UDP reachability monitoring...")
                 Watchdog(
                     ipaddr=ipaddr,
                     poll_interval=float(self.get("reach_interval") or 1.0),
                     duration=duration,
                     output_dir=DATA_DIR,
                     iface=self.get("reach_interface") or self.get("interface"),
+                    stop_event=self._reach_stop_event,
                 )
             elif self._active_page == "HTTP/S":
                 reach_interface = self.get("reach_interface") or self.get("interface")
@@ -4031,6 +4503,6 @@ class LocustGUI(ctk.CTk):
 
 
 if __name__ == "__main__":
-    app = LocustGUI()
+    app = LocustGUI(initial_theme=os.environ.get("LOCUST_GUI_THEME", "Navy Blue"))
     app.mainloop()
 

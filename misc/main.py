@@ -4,8 +4,8 @@ import subprocess
 import socket
 import ipaddress
 from urllib.parse import urlparse
-from misc.Config_Load import Config_Load
-from misc.Port_scanner import scan_ports_tcp
+from .Config_Load import Config_Load
+from .Port_scanner import scan_ports_tcp
 import time
 import random
 
@@ -29,8 +29,8 @@ def scan(
     protocol=None,
     range_start=None,
     range_end=None,
-    stop_event=None,
 ):
+    Config_Load.reset()
     cfg = Config_Load()
     host_ip = resolve_host(host_ip or cfg.get("ipaddr"))
     protocol = (protocol or cfg.get("protocol", "")).lower()
@@ -41,8 +41,7 @@ def scan(
             range_start=range_start or cfg.get("tcp_range_start"),
             range_end=range_end or cfg.get("tcp_range_end"),
             host_ip=host_ip,
-            version=6 if ":" in host_ip else 4,
-            stop_event = stop_event,
+            version=6 if ":" in host_ip else 4
         )
     else:
         dst_port = random.randint(int(range_start), int(range_end))
@@ -66,8 +65,8 @@ def run(
     synack_timeout=None,
     stop_timeout=None,
     target_rps=None,
-    locustfile=None,
 ):
+    Config_Load.reset()
     cfg = Config_Load()
     host_ip = resolve_host(host_ip or cfg.get("ipaddr"))
     protocol = (protocol or cfg.get("protocol", "")).lower()
@@ -100,7 +99,7 @@ def run(
     env["TARGET_PORT"] = str(port)
     env["PACKET_SIZE"] = str(packet_size or cfg.get("packet_size") or 60)
     env["TARGET_HOST"] = host_ip
-    env["PYTHONPATH"] = os.getcwd()
+    env["PYTHONPATH"] = BASE_DIR
     env["IP_POOL_FILE"] = pool_file
     env["IFACE"] = iface
     env["SYNACK_TIMEOUT"] = str(synack_timeout or cfg.get("synack_timeout") or "5")
@@ -111,6 +110,10 @@ def run(
 
     csv_out = csv_prefix or os.path.join(BASE_DIR, "report", "data", "report")
 
+    worker_count = int(worker_count or cfg.get("workers") or -1)
+    if worker_count == -1:
+        worker_count = os.cpu_count() - 1 or 1
+
     master_cmd = [
         "sudo",
         f"IFACE={iface}",
@@ -120,7 +123,7 @@ def run(
         f"PACKET_SIZE={packet_size or cfg.get('packet_size') or 60}",
         f"TARGET_RPS={target_rps or 0}",
         f"LOCUST_MODE={protocol}",
-        f"PYTHONPATH={os.getcwd()}", sys.executable, "-m", "locust",
+        f"PYTHONPATH={BASE_DIR}", sys.executable, "-m", "locust",
         "-f", locust_file,
         "--master",
         "--headless",
@@ -131,7 +134,6 @@ def run(
         "--run-time", f"{run_time}s",
         "--expect-workers", str(worker_count),
         "--html", os.path.join(BASE_DIR, "report", "report.html"),
-        "--csv", csv_out,
         "--host", host
     ]
 
@@ -144,7 +146,7 @@ def run(
         f"PACKET_SIZE={packet_size or cfg.get('packet_size') or 60}",
         f"TARGET_RPS={target_rps or 0}",
         f"LOCUST_MODE={protocol}",
-        f"PYTHONPATH={os.getcwd()}",
+        f"PYTHONPATH={BASE_DIR}",
         sys.executable,
         "-m",
         "locust",

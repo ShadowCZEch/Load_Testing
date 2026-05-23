@@ -1,7 +1,7 @@
 
 from scapy.error import Scapy_Exception
 from scapy.all import send
-from misc.Config_Load import config_load
+from .Config_Load import config_load
 import random
 from scapy.layers.inet import IP,TCP,sr1
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -19,7 +19,7 @@ def syn_scan(target_ip,version, port, timeout=0.5):
         return True
     return False
 
-def scan_ports_tcp(range_start=None, range_end = None, host_ip=None, version=None, workers=200, timeout=0.5, stop_event = None):
+def scan_ports_tcp(range_start=None, range_end = None, host_ip=None, version=None, workers=200, timeout=0.5):
     open_ports = []
     cfg = config_load()
     ipaddr  = host_ip or cfg.get("ipaddr")
@@ -35,9 +35,6 @@ def scan_ports_tcp(range_start=None, range_end = None, host_ip=None, version=Non
     with ThreadPoolExecutor(max_workers=workers) as ex:
         futures = {ex.submit(syn_scan, ipaddr, version, port, timeout): port for port in ports}
         for fut in as_completed(futures):
-            if stop_event and stop_event.is_set():
-                ex.shutdown(wait=False, cancel_futures=True)
-                raise InterruptedError("Scan cancelled by user.")
             scanned += 1
             port = futures[fut]
 

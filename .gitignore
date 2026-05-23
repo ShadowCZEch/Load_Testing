@@ -1,4 +1,3 @@
-
 __pycache__/
 *.py[cod]
 *.so
@@ -7,7 +6,23 @@ __pycache__/
 dist/
 build/
 venv/
+.venv/
 .idea/
 *.iml
 *.log
-*.html
+
+# Generated runtime data
+data/*.csv
+data/stage_*
+report/*.pdf
+report/report.html
+report/data/
+ip_pool.txt
+port_pool.txt
+test_config.csv
+
+# Sensitive keys/certificates
+*.p12
+*.pfx
+*.key
+*.pem

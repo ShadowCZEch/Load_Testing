@@ -190,6 +190,60 @@ def load_test_times(meta_path):
     return "Unknown", "Unknown", "Unknown", "Unknown", "Unknown", "Unknown"
 
 
+def _read_ip_pool_summary_from_file(pool_file=None):
+    """Read IP pool count and display range directly from ip_pool.txt.
+
+    Used as a fallback when an older test_config.csv does not contain
+    ip_pool_count/ip_pool_range.
+    """
+    pool_file = pool_file or os.path.join(BASE_DIR, "ip_pool.txt")
+    if not os.path.exists(pool_file):
+        return None, None
+
+    entries = []
+    header_prefix = None
+
+    try:
+        with open(pool_file, encoding="utf-8") as f:
+            for raw_line in f:
+                line = raw_line.strip()
+                if not line:
+                    continue
+                if line.startswith("#"):
+                    if "prefix=/" in line:
+                        try:
+                            header_prefix = line.split("prefix=/", 1)[1].strip()
+                        except Exception:
+                            pass
+                    continue
+
+                if "/" in line:
+                    ip, prefix = line.split("/", 1)
+                    entries.append((ip.strip(), prefix.strip()))
+                else:
+                    entries.append((line, header_prefix))
+    except Exception:
+        return None, None
+
+    if not entries:
+        return None, None
+
+    count = len(entries)
+    first_ip, first_prefix = entries[0]
+    last_ip, last_prefix = entries[-1]
+    first_prefix = first_prefix or last_prefix or ""
+    last_prefix = last_prefix or first_prefix
+
+    if count == 1:
+        display_range = f"{first_ip}/{first_prefix}" if first_prefix else first_ip
+    else:
+        left = f"{first_ip}/{first_prefix}" if first_prefix else first_ip
+        right = f"{last_ip}/{last_prefix}" if last_prefix else last_ip
+        display_range = f"{left} - {right}"
+
+    return count, display_range
+
+
 def compute_duration(start_str, end_str):
     try:
         fmt      = "%H:%M:%S"
@@ -1635,6 +1689,16 @@ def create_pdf_report(stats_file, history_file, output_file,
             pass
     # ───────────────────────────────────────────────────────────
 
+    # HTTP/S fallback: older snapshots may not contain ip_pool_count/ip_pool_range.
+    # In that case, read the current ip_pool.txt so the PDF does not show
+    # "Unknown" when a pool file is available.
+    if not ip_pool_count or str(ip_pool_count).strip().lower() in ("", "nan", "none", "null", "unknown", "0"):
+        fallback_count, fallback_range = _read_ip_pool_summary_from_file()
+        if fallback_count:
+            ip_pool_count = fallback_count
+            if not ip_pool_range or str(ip_pool_range).strip().lower() in ("", "nan", "none", "null", "unknown"):
+                ip_pool_range = fallback_range
+
     if source_ip:
         used_ips = source_ip
     elif used_ips in ("Unknown", "", "nan", None):
@@ -1743,6 +1807,7 @@ def create_pdf_report(stats_file, history_file, output_file,
     story.append(Spacer(1, 8))
     source_ports_display = str(src_ports).strip() if src_ports else ""
     target_rps = str(target_rps or os.getenv("TARGET_RPS", "0")).strip()
+    print(f"[DEBUG] target_rps raw = {repr(target_rps)}")
 
     if float(target_rps) == -1:
         rps_limit_text = "Unlimited"
@@ -2197,5 +2262,6 @@ if __name__ == "__main__":
         history_file = HISTORY_FILE,
         output_file  = PDF_FILE,
     )
+
 
 

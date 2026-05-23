@@ -53,11 +53,11 @@ def one_ping(ipaddr, timeout, iface=None):
         cmd.append(ipaddr)
         result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return result.returncode == 0
-    except Exception (OSError, ValueError, subprocess.SubprocessError):
+    except (OSError, ValueError, subprocess.SubprocessError):
         return False
 
 def Watchdog(ipaddr=None, poll_interval=None, duration=None,
-             output_dir: str = "data", append: bool = False, iface = None):
+             output_dir: str = "data", append: bool = False, iface=None, stop_event=None):
 
     if not poll_interval:
         raise ValueError("poll_interval must be provided.")
@@ -102,6 +102,9 @@ def Watchdog(ipaddr=None, poll_interval=None, duration=None,
 
     try:
         while True:
+            if stop_event is not None and stop_event.is_set():
+                print("\nMonitoring stop requested.")
+                break
             start_time = time.time()
             timestamp = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
             up = one_ping(ipaddr,timeout, iface)
