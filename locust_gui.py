@@ -750,9 +750,6 @@ class LocustGUI(ctk.CTk):
         else:
             src_ports = f"{_tcp_start}-{_tcp_end}"
 
-        print(f"[DEBUG] _tcp_start={repr(_tcp_start)}, _tcp_end={repr(_tcp_end)}, src_ports={repr(src_ports)}")
-        print(f"[DEBUG] src_ports in entries: {'src_ports' in self.entries}")
-
         mapping = {
             "tcp_processes": os.getenv("TCP_WORKERS"),
             "udp_processes": os.getenv("UDP_WORKERS"),
@@ -768,7 +765,6 @@ class LocustGUI(ctk.CTk):
                 widget.delete(0, "end")
                 if value:
                     widget.insert(0, value)
-                print(f"[DEBUG] set {key} = {repr(value)}, widget now = {repr(widget.get())}")
         for tab_key in ("TCP", "UDP"):
             p = self._pages.get(tab_key)
             if isinstance(p, dict) and "stages" in p:
@@ -787,7 +783,6 @@ class LocustGUI(ctk.CTk):
                         print(f"[WARN] Could not load stages for {tab_key}: {e}")
 
     def _save_env_from_gui(self, log=True):
-        print(f"[DEBUG] saving page: {self._active_page.upper()}")
         env_path = os.path.join(BASE_DIR, "config.env")
         # For TCP/UDP
         _stages = self._get_stages()
@@ -858,7 +853,6 @@ class LocustGUI(ctk.CTk):
                         f"⚠ {label} '{val}' is invalid (must be 0–100 %). Skipping save."
                     )
                     return
-        print(f"[DEBUG] about to write config.env")
         self._write_structured_env(env_path, mapping)
         load_dotenv(dotenv_path=env_path, override=True)
 
