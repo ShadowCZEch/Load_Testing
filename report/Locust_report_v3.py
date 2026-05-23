@@ -1807,7 +1807,6 @@ def create_pdf_report(stats_file, history_file, output_file,
     story.append(Spacer(1, 8))
     source_ports_display = str(src_ports).strip() if src_ports else ""
     target_rps = str(target_rps or os.getenv("TARGET_RPS", "0")).strip()
-    print(f"[DEBUG] target_rps raw = {repr(target_rps)}")
 
     if float(target_rps) == -1:
         rps_limit_text = "Unlimited"

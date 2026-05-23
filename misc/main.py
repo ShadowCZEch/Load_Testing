@@ -75,7 +75,6 @@ def run(
     spawn_rate = spawn_rate or cfg.get("spawn_rate")
     run_time = run_time or cfg.get("time_total")
     iface = iface or cfg.get("interface")
-    print(f"[DEBUG] iface from config = {repr(iface)}")
     if not iface:
         raise ValueError("interface not set in config. Select an interface in the GUI.")
     stop_timeout = str(stop_timeout or cfg.get("stop_timeout") or 60)
