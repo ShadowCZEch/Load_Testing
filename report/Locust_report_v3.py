@@ -1,0 +1,2266 @@
+#!/usr/bin/env python3
+import matplotlib
+matplotlib.use('Agg')
+import os
+import sys
+import pandas as pd
+import json
+import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.styles import  ParagraphStyle
+from reportlab.lib.units import mm
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+    Image, PageBreak
+)
+from reportlab.platypus.flowables import Flowable
+from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+from datetime import datetime
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None
+
+# === PATHS ===
+BASE_DIR   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR   = os.path.join(BASE_DIR, "data")
+REPORT_DIR = os.path.dirname(os.path.abspath(__file__))
+if load_dotenv is not None:
+    load_dotenv(os.path.join(BASE_DIR, "config.env"), override=True)
+
+# === CONFIGURATION ===
+STATS_FILE    = os.path.join(DATA_DIR, "report_stats.csv")
+HISTORY_FILE  = os.path.join(DATA_DIR, "report_stats_history.csv")
+NETWORK_FILE  = os.path.join(DATA_DIR, "network_usage.csv")
+META_FILE     = os.path.join(DATA_DIR, "report_metadata.csv")
+PDF_FILE      = os.path.join(REPORT_DIR, "Locust_Report.pdf")
+FAILURES_FILE = os.path.join(DATA_DIR, "report_failures.csv")
+REACH_FILE    = os.path.join(DATA_DIR, "reachability.csv")
+
+# Biele stránky — text musí byť tmavý
+C_TEXT       = colors.HexColor("#1a1a1a")
+C_TEXT_MUTED = colors.HexColor("#555555")
+
+# Akcenty
+C_PRIMARY      = colors.HexColor("#2a5f3a")
+C_PRIMARY_DARK = colors.HexColor("#1e4a2c")
+C_ACCENT       = colors.HexColor("#2a5f3a")
+C_DANGER       = colors.HexColor("#922b21")
+C_SURFACE      = colors.HexColor("#f5f5f5")
+C_SURFACE2     = colors.HexColor("#ebebeb")
+C_ROW_ALT      = colors.HexColor("#f0f5f1")
+C_BORDER       = colors.HexColor("#cccccc")
+C_WHITE        = colors.white
+
+PAGE_W, PAGE_H = A4
+MARGIN         = 18 * mm
+
+
+# ================================================================
+# CUSTOM FLOWABLES
+# ================================================================
+
+class ColorBand(Flowable):
+    def __init__(self, text, bg=None, height=28, font_size=13):
+        super().__init__()
+        self.text      = text
+        self.bg        = bg or C_PRIMARY
+        self.height    = height
+        self.font_size = font_size
+        self.width     = PAGE_W - 2 * MARGIN
+
+    def draw(self):
+        self.canv.setFillColor(self.bg)
+        self.canv.roundRect(0, 0, self.width, self.height, 6, fill=1, stroke=0)
+        self.canv.setFillColor(C_WHITE)
+        self.canv.setFont("Helvetica-Bold", self.font_size)
+        self.canv.drawString(12, 8, self.text)
+
+    def wrap(self, *args):
+        return self.width, self.height
+
+
+class HeroHeader(Flowable):
+    def __init__(self, title, subtitle, logo_path=None):
+        super().__init__()
+        self.title     = title
+        self.subtitle  = subtitle
+        self.logo_path = logo_path
+        self.width     = PAGE_W - 2 * MARGIN
+        self.height    = 90
+
+    def draw(self):
+        w, h = self.width, self.height
+        self.canv.setFillColor(C_PRIMARY_DARK)
+        self.canv.roundRect(0, 0, w, h, 10, fill=1, stroke=0)
+        self.canv.setFillColor(C_PRIMARY)
+        self.canv.roundRect(w * 0.70, 0, w * 0.30, h, 10, fill=1, stroke=0)
+        self.canv.rect(w * 0.70, 0, 20, h, fill=1, stroke=0)
+
+        if self.logo_path and os.path.exists(self.logo_path):
+            self.canv.drawImage(
+                self.logo_path,
+                w - 130, 15, width=110, height=60,
+                mask='auto', preserveAspectRatio=True
+            )
+
+        self.canv.setFillColor(C_WHITE)
+        self.canv.setFont("Helvetica-Bold", 22)
+        self.canv.drawString(16, h - 34, self.title)
+        self.canv.setFont("Helvetica", 11)
+        self.canv.setFillColor(colors.HexColor("#BDD7FF"))
+        self.canv.drawString(16, h - 54, self.subtitle)
+
+    def wrap(self, *args):
+        return self.width, self.height
+
+
+def _page_template(canvas, doc):
+    canvas.saveState()
+    canvas.setFont("Helvetica", 8)
+    canvas.setFillColor(C_TEXT_MUTED)
+    canvas.setStrokeColor(C_BORDER)
+    canvas.setLineWidth(0.5)
+    canvas.line(MARGIN, 18 * mm, PAGE_W - MARGIN, 18 * mm)
+    canvas.drawString(MARGIN, 13 * mm, "Locust Load Test Report")
+    canvas.drawRightString(
+        PAGE_W - MARGIN, 13 * mm,
+        f"Page {doc.page}  •  {datetime.now().strftime('%d.%m.%Y')}"
+    )
+    canvas.restoreState()
+
+
+# ================================================================
+# HELPER FUNCTIONS
+# ================================================================
+
+def generate_topology_diagram(target_ip=None, source_ip=None,
+                                interface=None, output_file=None,
+                                reach_src_ip=None):
+    if output_file is None:
+        output_file = os.path.join(REPORT_DIR, "topology_diagram.png")
+    try:
+        sys.path.insert(0, os.path.join(BASE_DIR, "network"))
+        from network.Create_topology import create_topology_diagram
+        create_topology_diagram(
+            target_ip    = target_ip    or "Unknown",
+            source_ip    = source_ip    or "Unknown",
+            interface    = interface    or "ens33",
+            output_file  = output_file,
+            reach_src_ip = reach_src_ip
+        )
+        print("✓ Topology diagram generated")
+        return True
+    except Exception as e:
+        print(f"✗ Error generating topology: {e}")
+        return False
+
+
+def _get_os_port_range():
+    try:
+        with open("/proc/sys/net/ipv4/ip_local_port_range") as f:
+            lo, hi = f.read().split()
+        return f"OS ephemeral ({lo}–{hi})"
+    except Exception:
+        return "OS assigned (random)"
+
+
+def load_test_times(meta_path):
+    if os.path.exists(meta_path):
+        try:
+            df             = pd.read_csv(meta_path)
+            start_time_raw = str(df.iloc[0].get("start_time",  "Unknown"))
+            end_time_raw   = str(df.iloc[0].get("end_time",    "Unknown"))
+            test_type      = str(df.iloc[0].get("test_type",   "Unknown"))
+            target_host    = str(df.iloc[0].get("target_host", "Unknown"))
+            target_ip      = str(df.iloc[0].get("target_ip",   "Unknown"))
+            used_ips       = str(df.iloc[0].get("used_ips",    "Unknown"))
+            try:
+                start_time = datetime.fromisoformat(start_time_raw).strftime("%H:%M:%S")
+                end_time   = datetime.fromisoformat(end_time_raw).strftime("%H:%M:%S")
+            except Exception:
+                start_time = start_time_raw
+                end_time   = end_time_raw
+            return start_time, end_time, test_type, target_host, target_ip, used_ips
+        except Exception as e:
+            print(f"Failed to load {meta_path}: {e}")
+    return "Unknown", "Unknown", "Unknown", "Unknown", "Unknown", "Unknown"
+
+
+def _read_ip_pool_summary_from_file(pool_file=None):
+    """Read IP pool count and display range directly from ip_pool.txt.
+
+    Used as a fallback when an older test_config.csv does not contain
+    ip_pool_count/ip_pool_range.
+    """
+    pool_file = pool_file or os.path.join(BASE_DIR, "ip_pool.txt")
+    if not os.path.exists(pool_file):
+        return None, None
+
+    entries = []
+    header_prefix = None
+
+    try:
+        with open(pool_file, encoding="utf-8") as f:
+            for raw_line in f:
+                line = raw_line.strip()
+                if not line:
+                    continue
+                if line.startswith("#"):
+                    if "prefix=/" in line:
+                        try:
+                            header_prefix = line.split("prefix=/", 1)[1].strip()
+                        except Exception:
+                            pass
+                    continue
+
+                if "/" in line:
+                    ip, prefix = line.split("/", 1)
+                    entries.append((ip.strip(), prefix.strip()))
+                else:
+                    entries.append((line, header_prefix))
+    except Exception:
+        return None, None
+
+    if not entries:
+        return None, None
+
+    count = len(entries)
+    first_ip, first_prefix = entries[0]
+    last_ip, last_prefix = entries[-1]
+    first_prefix = first_prefix or last_prefix or ""
+    last_prefix = last_prefix or first_prefix
+
+    if count == 1:
+        display_range = f"{first_ip}/{first_prefix}" if first_prefix else first_ip
+    else:
+        left = f"{first_ip}/{first_prefix}" if first_prefix else first_ip
+        right = f"{last_ip}/{last_prefix}" if last_prefix else last_ip
+        display_range = f"{left} - {right}"
+
+    return count, display_range
+
+
+def compute_duration(start_str, end_str):
+    try:
+        fmt      = "%H:%M:%S"
+        start_dt = datetime.strptime(start_str, fmt)
+        end_dt   = datetime.strptime(end_str,   fmt)
+        delta    = end_dt - start_dt
+        if delta.total_seconds() < 0:
+            delta = (datetime.combine(datetime.today(), end_dt.time()) -
+                     datetime.combine(datetime.today(), start_dt.time()))
+        total = delta.total_seconds()
+        m, s  = divmod(total, 60)
+        h, m  = divmod(int(m), 60)
+        if h > 0:
+            return f"{h}h {m}m"
+        elif m > 0:
+            return f"{m}m {int(s)}s"
+        else:
+            return f"{s:.1f}s"
+    except Exception:
+        return "Unknown"
+
+
+def add_stages_table(story, S, base_dir):
+    stages_path = os.path.join(base_dir, "stages.json")
+    if not os.path.exists(stages_path):
+        return
+
+    try:
+        with open(stages_path) as f:
+            stages = json.load(f)
+
+        if not stages:
+            return
+
+        S_head = ParagraphStyle(
+            "sh",
+            fontSize=9,
+            textColor=colors.white,
+            fontName="Helvetica-Bold",
+            alignment=TA_CENTER
+        )
+
+        S_cell = ParagraphStyle(
+            "sc",
+            fontSize=9,
+            textColor=C_TEXT,
+            alignment=TA_CENTER,
+            leading=12
+        )
+
+        rows = [[
+            Paragraph("Stage",              S_head),
+            Paragraph("Stage Duration (s)", S_head),
+            Paragraph("Users",              S_head),
+            Paragraph("Spawn Rate",         S_head),
+            Paragraph("Time Interval",      S_head),
+        ]]
+
+        cumulative_start = 0
+
+        for i, stage in enumerate(stages, 1):
+            duration   = int(stage.get("duration", 0))
+            users      = int(stage.get("users", 0))
+            spawn_rate = int(stage.get("spawn_rate", 0))
+
+            cumulative_end = cumulative_start + duration
+            interval_str = f"{cumulative_start}–{cumulative_end} s"
+
+            rows.append([
+                Paragraph(str(i),          S_cell),
+                Paragraph(str(duration),   S_cell),
+                Paragraph(str(users),      S_cell),
+                Paragraph(str(spawn_rate), S_cell),
+                Paragraph(interval_str,    S_cell),
+            ])
+
+            cumulative_start = cumulative_end
+
+        col_w = (PAGE_W - 2 * MARGIN) / 5
+
+        t = Table(rows, colWidths=[col_w] * 5)
+
+        t.setStyle(TableStyle([
+            ("BACKGROUND",     (0, 0), (-1, 0), C_PRIMARY_DARK),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [C_WHITE, C_ROW_ALT]),
+            ("GRID",           (0, 0), (-1, -1), 0.4, C_BORDER),
+            ("LEFTPADDING",    (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING",   (0, 0), (-1, -1), 6),
+            ("TOPPADDING",     (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING",  (0, 0), (-1, -1), 5),
+            ("VALIGN",         (0, 0), (-1, -1), "MIDDLE"),
+        ]))
+
+        story.append(ColorBand("  Test Stages"))
+        story.append(Spacer(1, 8))
+        story.append(t)
+        story.append(Spacer(1, 14))
+
+    except Exception as e:
+        print(f"Warning: Could not load stages: {e}")
+
+
+# ================================================================
+# TABLE HELPERS
+# ================================================================
+
+def make_info_table(rows, col_widths=None):
+    col_widths = col_widths or [160, None]
+    t = Table(rows, colWidths=col_widths, hAlign="LEFT")
+    t.setStyle(TableStyle([
+        ("FONTNAME",       (0, 0), (0, -1), "Helvetica-Bold"),
+        ("FONTNAME",       (1, 0), (1, -1), "Helvetica"),
+        ("FONTSIZE",       (0, 0), (-1, -1), 10),
+        ("TEXTCOLOR",      (0, 0), (0, -1), C_PRIMARY_DARK),
+        ("TEXTCOLOR",      (1, 0), (1, -1), C_TEXT),
+        ("ROWBACKGROUNDS", (0, 0), (-1, -1), [C_WHITE, C_ROW_ALT]),
+        ("GRID",           (0, 0), (-1, -1), 0.4, C_BORDER),
+        ("LEFTPADDING",    (0, 0), (-1, -1), 10),
+        ("RIGHTPADDING",   (0, 0), (-1, -1), 10),
+        ("TOPPADDING",     (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING",  (0, 0), (-1, -1), 6),
+    ]))
+    return t
+
+
+def make_metric_cards(metrics):
+    n     = len(metrics)
+    width = (PAGE_W - 2 * MARGIN - (n - 1) * 4) / n
+
+    cells = []
+    for label, value, bg in metrics:
+        inner = Table(
+            [
+                [Paragraph(f"<b>{value}</b>",
+                           ParagraphStyle("cv", fontSize=16, textColor=C_WHITE,
+                                          alignment=TA_CENTER,
+                                          fontName="Helvetica-Bold"))],
+                [Paragraph(label,
+                           ParagraphStyle("cl", fontSize=8,
+                                          textColor=colors.HexColor("#BDD7FF"),
+                                          alignment=TA_CENTER))]
+            ],
+            colWidths=[width]
+        )
+        inner.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, -1), bg),
+            ("TOPPADDING",    (0, 0), (-1, -1), 10),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+            ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
+        ]))
+        cells.append(inner)
+
+    grid = Table([cells], colWidths=[width] * n, hAlign="LEFT")
+    grid.setStyle(TableStyle([
+        ("LEFTPADDING",  (0, 0), (-1, -1), 2),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+        ("TOPPADDING",   (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 0),
+    ]))
+    return grid
+
+
+# ================================================================
+# MATPLOTLIB STYLE
+# ================================================================
+
+def _apply_chart_style(ax, title):
+    ax.set_facecolor("#F8F9FA")
+    ax.get_figure().set_facecolor("white")
+    ax.set_title(title, fontsize=11, fontweight="bold", color="#202124", pad=10)
+    ax.tick_params(colors="#5F6368", labelsize=8)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_color("#DADCE0")
+    ax.spines["bottom"].set_color("#DADCE0")
+    ax.grid(True, linestyle="--", linewidth=0.5, color="#E0E0E0", alpha=0.8)
+    ax.set_xlabel(ax.get_xlabel(), fontsize=9, color="#5F6368")
+    ax.set_ylabel(ax.get_ylabel(), fontsize=9, color="#5F6368")
+
+
+def save_chart(path, dpi=180):
+    plt.tight_layout()
+    plt.savefig(path, dpi=dpi, bbox_inches="tight", facecolor="white")
+    plt.close()
+
+
+# ================================================================
+# CHART FUNCTIONS
+# ================================================================
+
+def add_time_series_charts(history_df, story, request_failure_threshold=None):
+    if 'Timestamp' not in history_df.columns:
+        return
+
+    history_df = history_df.copy()
+    history_df['Timestamp'] = pd.to_datetime(history_df['Timestamp'], unit='s')
+
+    try:
+        if request_failure_threshold is None:
+            request_failure_threshold = float(os.getenv("REQUEST_FAILURE_THRESHOLD", "1"))
+        else:
+            request_failure_threshold = float(request_failure_threshold)
+    except Exception:
+        request_failure_threshold = 1.0
+
+    # Ak príde hodnota ako 0.01, interpretujeme ju ako 1 %
+    if request_failure_threshold < 1:
+        request_failure_threshold = request_failure_threshold * 100
+
+    # Bezpečná konverzia metrík
+    requests_s = pd.to_numeric(history_df['Requests/s'], errors='coerce').fillna(0)
+    failures_s = pd.to_numeric(history_df['Failures/s'], errors='coerce').fillna(0)
+
+    # Percentuálna chybovosť v každom časovom bode
+    failure_rate_pct = (failures_s / requests_s.replace(0, pd.NA) * 100).fillna(0)
+
+    # ================================================================
+    # Requests/s + Failures/s + Failure Rate (%) + Threshold (%)
+    # ================================================================
+
+    p1 = os.path.join(REPORT_DIR, "chart_rps_failures.png")
+    fig, ax = plt.subplots(figsize=(7, 3))
+
+    # Ľavá os: Requests/s a Failures/s
+    ax.fill_between(
+        history_df['Timestamp'],
+        requests_s,
+        alpha=0.15,
+        color="#1A73E8"
+    )
+
+    ax.plot(
+        history_df['Timestamp'],
+        requests_s,
+        label='Requests/s',
+        color="#1A73E8",
+        linewidth=1.8
+    )
+
+    ax.plot(
+        history_df['Timestamp'],
+        failures_s,
+        label='Failures/s',
+        color="#EA4335",
+        linewidth=1.8,
+        linestyle="--"
+    )
+
+    ax.set_ylabel("Requests/s / Failures/s")
+    _apply_chart_style(ax, "Requests per Second Over Time")
+
+    # Pravá os: Failure Rate (%)
+    ax2 = ax.twinx()
+
+    ax2.plot(
+        history_df['Timestamp'],
+        failure_rate_pct,
+        label='Failure Rate (%)',
+        color="#922b21",
+        linewidth=1.5,
+        linestyle="-."
+    )
+
+    # Horizontálna hranica request failure thresholdu
+    ax2.axhline(
+        y=request_failure_threshold,
+        color="#F9AB00",
+        linestyle="--",
+        linewidth=1.5,
+        alpha=0.95,
+        label=f'Request Failure Threshold ({request_failure_threshold:g}%)'
+    )
+
+    ax2.set_ylabel("Failure Rate (%)", fontsize=9, color="#922b21")
+    ax2.tick_params(axis='y', colors="#922b21", labelsize=8)
+    ax2.spines["right"].set_color("#922b21")
+
+    max_failure_pct = max(float(failure_rate_pct.max()), request_failure_threshold)
+    y2_max = max(5.0, max_failure_pct * 1.35)
+    y2_max = min(y2_max, 100.0)
+    ax2.set_ylim(0, y2_max)
+
+    # Spoločná legenda pre obe osi
+    lines1, labels1 = ax.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+
+    ax.legend(
+        lines1 + lines2,
+        labels1 + labels2,
+        fontsize=7.5,
+        framealpha=0.85,
+        loc="upper left"
+    )
+
+    save_chart(p1)
+
+    story.append(Image(p1, width=440, height=190))
+    story.append(Spacer(1, 10))
+
+    # ================================================================
+    # Response times
+    # ================================================================
+
+    p2 = os.path.join(REPORT_DIR, "chart_response_times.png")
+    fig, ax = plt.subplots(figsize=(7, 3))
+
+    ax.fill_between(
+        history_df['Timestamp'],
+        history_df['Total Min Response Time'] / 1000,
+        history_df['Total Max Response Time'] / 1000,
+        alpha=0.08,
+        color="#1A73E8"
+    )
+
+    ax.plot(
+        history_df['Timestamp'],
+        history_df['Total Min Response Time'] / 1000,
+        label='Min',
+        linestyle='--',
+        color="#34A853",
+        linewidth=1.5
+    )
+
+    ax.plot(
+        history_df['Timestamp'],
+        history_df['Total Median Response Time'] / 1000,
+        label='Median',
+        linestyle='-',
+        color="#1A73E8",
+        linewidth=2
+    )
+
+    ax.plot(
+        history_df['Timestamp'],
+        history_df['Total Max Response Time'] / 1000,
+        label='Max',
+        linestyle='-.',
+        color="#EA4335",
+        linewidth=1.5
+    )
+
+    ax.set_ylabel("Response Time (s)")
+    ax.legend(fontsize=8, framealpha=0.8)
+    _apply_chart_style(ax, "Response Times Over Time")
+    save_chart(p2)
+
+    story.append(Image(p2, width=440, height=190))
+    story.append(Spacer(1, 10))
+
+    # ================================================================
+    # User count
+    # ================================================================
+
+    if 'User Count' in history_df.columns:
+        p3 = os.path.join(REPORT_DIR, "chart_users.png")
+        fig, ax = plt.subplots(figsize=(7, 3))
+
+        ax.fill_between(
+            history_df['Timestamp'],
+            history_df['User Count'],
+            alpha=0.15,
+            color="#7B2FBE"
+        )
+
+        ax.plot(
+            history_df['Timestamp'],
+            history_df['User Count'],
+            color="#7B2FBE",
+            linewidth=1.8,
+            label="Users"
+        )
+
+        ax.set_ylabel("Number of Users")
+        ax.yaxis.set_major_locator(ticker.MaxNLocator(integer=True))
+        ax.legend(fontsize=8)
+        _apply_chart_style(ax, "Number of Users Over Time")
+        save_chart(p3)
+
+        story.append(Image(p3, width=440, height=190))
+        story.append(Spacer(1, 10))
+# ================================================================
+# REACHABILITY FUNCTIONS
+# ================================================================
+
+def load_reachability_data(reach_file):
+    if not os.path.exists(reach_file):
+        print(f"Reachability file not found: {reach_file}")
+        return None, None, None
+    try:
+        df = pd.read_csv(reach_file)
+        if df.empty:
+            return None, None, None
+
+        if "status_code" not in df.columns:
+            return None, None, None
+
+        # Reachable = only 2xx (not 429, not 3xx)
+        df["reachable"] = (df["status_code"] >= 200) & (df["status_code"] < 300)
+        reachable_count   = int(df["reachable"].sum())
+        unreachable_count = int((~df["reachable"]).sum())
+
+        print(f"✓ Reachability data loaded: {reachable_count} reachable, {unreachable_count} unreachable")
+        return reachable_count, unreachable_count, df
+    except Exception as e:
+        print(f"Error loading reachability data: {e}")
+        return None, None, None
+def add_final_availability_summary_chart(story, reach_df=None, success=None, fail_count=None):
+
+    p_summary = os.path.join(REPORT_DIR, "chart_availability_summary.png")
+
+    if reach_df is not None and not reach_df.empty:
+        # Reachable = any successful HTTP 2xx response
+        reachable_mask = (
+            (reach_df["status_code"] >= 200) &
+            (reach_df["status_code"] < 300)
+        )
+
+        reachable = int(reachable_mask.sum())
+        unreachable = int((~reachable_mask).sum())
+        total = len(reach_df)
+        source_note = f"Based on reachability probes ({total} probes)."
+    else:
+        reachable = int(success or 0)
+        unreachable = int(fail_count or 0)
+        total = reachable + unreachable
+        source_note = f"Fallback to Locust request statistics ({total} requests)."
+
+    sizes = [reachable, unreachable] if total > 0 else [1, 0]
+    labels = ["Reachable", "Unreachable"]
+    colors_pie = ["#34A853", "#EA4335"]
+
+    fig, ax = plt.subplots(figsize=(5.2, 3.8))
+    wedges, _, autotexts = ax.pie(
+        sizes,
+        colors=colors_pie,
+        startangle=90,
+        autopct="%1.1f%%",
+        pctdistance=0.72,
+        wedgeprops={"edgecolor": "white", "linewidth": 2}
+    )
+
+    for i, a in enumerate(autotexts):
+        a.set_fontsize(10)
+        a.set_color("black")
+        a.set_fontweight("bold")
+
+    ax.legend(
+        wedges,
+        [f"Reachable ({reachable})", f"Unreachable ({unreachable})"],
+        loc="lower center",
+        bbox_to_anchor=(0.5, -0.15),
+        ncol=2,
+        fontsize=8,
+        framealpha=0.9,
+        frameon=True,
+        edgecolor="#DADCE0",
+    )
+
+    ax.set_title(
+        "Final Availability Summary",
+        fontsize=11,
+        fontweight="bold",
+        color="#202124"
+    )
+    fig.patch.set_facecolor("white")
+
+    plt.subplots_adjust(bottom=0.22)
+    save_chart(p_summary, dpi=220)
+
+    story.append(ColorBand("  Final Availability Summary"))
+    story.append(Spacer(1, 10))
+    story.append(Image(p_summary, width=320, height=280))
+    story.append(Spacer(1, 6))
+    story.append(Spacer(1, 4))
+    story.append(Paragraph(
+        source_note,
+        ParagraphStyle("avail_src", fontSize=8, textColor=C_TEXT_MUTED, alignment=TA_CENTER)
+    ))
+    story.append(Spacer(1, 12))
+# ================================================================
+# TCP/UDP Watchdog reachability parser
+# ================================================================
+def load_watchdog_reachability(reach_path):
+
+    if not os.path.exists(reach_path):
+        return None, None, None
+    try:
+        rows = []
+        with open(reach_path, "r") as f:
+            last_session_rows = []
+            current_session  = []
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                if line.startswith("# session:"):
+                    if current_session:
+                        last_session_rows = current_session
+                    current_session = []
+                    continue
+                if line == "timestamp,status":
+                    continue
+                parts = line.split(",", 1)
+                if len(parts) == 2:
+                    current_session.append({"timestamp": parts[0], "status": parts[1]})
+            if current_session:
+                last_session_rows = current_session
+
+        if not last_session_rows:
+            return None, None, None
+
+        df = pd.DataFrame(last_session_rows)
+        total     = len(df)
+        up_count  = (df["status"] == "up").sum()
+        down_count= total - up_count
+        pct_up    = round(up_count   / total * 100, 1) if total > 0 else 0.0
+        pct_down  = round(down_count / total * 100, 1) if total > 0 else 0.0
+
+        # Detect state changes
+        state_changes = []
+        went_down = 0
+        came_up   = 0
+        prev = None
+        for _, row in df.iterrows():
+            curr = row["status"]
+            if prev is not None and curr != prev:
+                direction = "up → down" if curr == "down" else "down → up"
+                state_changes.append({"timestamp": row["timestamp"], "direction": direction})
+                if curr == "down":
+                    went_down += 1
+                else:
+                    came_up += 1
+            prev = curr
+
+        stats = {
+            "total_changes": len(state_changes),
+            "went_down":     went_down,
+            "came_up":       came_up,
+            "pct_up":        pct_up,
+            "pct_down":      pct_down,
+            "up_count":      int(up_count),
+            "down_count":    int(down_count),
+        }
+        return df, stats, state_changes
+
+    except Exception as e:
+        print(f"Failed to load watchdog reachability: {e}")
+        return None, None, None
+
+def add_reachability_delay_chart(df, story, reach_timeout_s=None):
+    try:
+        import matplotlib.dates as mdates
+        from matplotlib.dates import date2num
+        import datetime
+
+        df = df.copy()
+        local_offset = datetime.datetime.now().astimezone().utcoffset()
+        df["timestamp"] = pd.to_datetime(df["unix_timestamp"], unit="s") + local_offset
+        df["delay_ms"]  = df["elapsed_time_s"] * 1000.0
+
+        def classify(code):
+            if 200 <= code < 300:
+                return "reachable"
+            elif code == 429:
+                return "rate_limited"
+            elif code == 0:
+                return "timeout"
+            elif 500 <= code < 600:
+                return "error_5xx"
+            else:
+                return "error_other"
+
+        df["category"] = df["status_code"].apply(classify)
+        df["reachable"] = df["category"] == "reachable"
+
+        COLORS = {
+            "reachable":    "#34A853",
+            "rate_limited": "#F9AB00",
+            "timeout":      "#FF6D00",
+            "error_5xx":    "#EA4335",
+            "error_other":  "#9E9E9E",
+        }
+        LABELS = {
+            "reachable":    "Reachable (2xx)",
+            "rate_limited": "Rate-limited (429)",
+            "timeout":      "Timeout / No response",
+            "error_5xx":    "Server error (5xx)",
+            "error_other":  "Other error (4xx)",
+        }
+        SHORT_LABELS = {
+            "rate_limited": "Rate\nlimited",
+            "timeout":      "Timeout",
+            "error_5xx":    "5xx Error",
+            "error_other":  "Other\nerror",
+        }
+
+        SEVERITY = ["error_5xx", "timeout", "rate_limited", "error_other", "reachable"]
+
+        def worse_category(cat_a, cat_b):
+            ia = SEVERITY.index(cat_a) if cat_a in SEVERITY else len(SEVERITY)
+            ib = SEVERITY.index(cat_b) if cat_b in SEVERITY else len(SEVERITY)
+            return cat_a if ia <= ib else cat_b
+
+        t_start = df["timestamp"].iloc[0]
+        t_end   = df["timestamp"].iloc[-1]
+
+        p_delay = os.path.join(REPORT_DIR, "chart_reach_delay.png")
+        fig, ax = plt.subplots(figsize=(7.5, 4.2))
+
+        # ── Y axis limits (computed early — needed for label placement) ──
+        y_min = max(0, df["delay_ms"].min() * 0.8)
+        y_max = df["delay_ms"].max() * 1.30
+        if reach_timeout_s:
+            y_max = max(y_max, reach_timeout_s * 1000 * 1.15)
+        ax.set_ylim(bottom=y_min, top=y_max)
+
+        # ── Background shading + inline text label per block ─────────
+        shade_color = {
+            "rate_limited": "#F9AB00",
+            "timeout":      "#FF6D00",
+            "error_5xx":    "#EA4335",
+            "error_other":  "#9E9E9E",
+        }
+        for cat, color in shade_color.items():
+            in_block, block_start = False, None
+            for _, row in df.iterrows():
+                if row["category"] == cat and not in_block:
+                    block_start, in_block = row["timestamp"], True
+                elif row["category"] != cat and in_block:
+                    block_end = row["timestamp"]
+                    ax.axvspan(block_start, block_end,
+                               color=color, alpha=0.12, zorder=1)
+                    # Inline label centered in the shaded block
+                    mid = block_start + (block_end - block_start) / 2
+                    ax.text(
+                        mid, y_max * 0.97,
+                        SHORT_LABELS[cat],
+                        fontsize=7, color=color, ha="center", va="top",
+                        fontweight="bold",
+                        bbox=dict(boxstyle="round,pad=0.2", fc="white",
+                                  ec=color, alpha=0.85, lw=0.8),
+                        zorder=6
+                    )
+                    in_block = False
+            if in_block and block_start is not None:
+                ax.axvspan(block_start, t_end, color=color, alpha=0.12, zorder=1)
+                mid = block_start + (t_end - block_start) / 2
+                ax.text(
+                    mid, y_max * 0.97,
+                    SHORT_LABELS[cat],
+                    fontsize=7, color=color, ha="center", va="top",
+                    fontweight="bold",
+                    bbox=dict(boxstyle="round,pad=0.2", fc="white",
+                              ec=color, alpha=0.85, lw=0.8),
+                    zorder=6
+                )
+
+        # ── Segmented line — color = worse of two adjacent categories ──
+        for i in range(len(df) - 1):
+            row_a = df.iloc[i]
+            row_b = df.iloc[i + 1]
+            seg_cat   = worse_category(row_a["category"], row_b["category"])
+            seg_color = COLORS[seg_cat]
+            ax.plot(
+                [row_a["timestamp"], row_b["timestamp"]],
+                [row_a["delay_ms"],  row_b["delay_ms"]],
+                color=seg_color, linewidth=1.8, zorder=2
+            )
+
+        # ── Scatter points — each category rendered separately ────────
+        marker_cfg = {
+            "reachable":    dict(s=18, marker="o",  linewidths=1.2),
+            "rate_limited": dict(s=28, marker="^",  linewidths=1.5),
+            "timeout":      dict(s=32, marker="D",  linewidths=1.5),
+            "error_5xx":    dict(s=32, marker="x",  linewidths=2.0),
+            "error_other":  dict(s=22, marker="s",  linewidths=1.2),
+        }
+        for cat, cfg in marker_cfg.items():
+            mask = df["category"] == cat
+            if mask.any():
+                ax.scatter(
+                    df.loc[mask, "timestamp"],
+                    df.loc[mask, "delay_ms"],
+                    color=COLORS[cat],
+                    zorder=4,
+                    label=LABELS[cat],
+                    **cfg
+                )
+
+        # ── "First outage" annotation ─────────────────────────────────
+        problem_cats = {"timeout", "error_5xx", "rate_limited", "error_other"}
+        first_fail_mask = df["category"].isin(problem_cats)
+        if first_fail_mask.any():
+            first_fail = df[first_fail_mask].iloc[0]
+            ax.annotate(
+                f"First outage\n{first_fail['timestamp'].strftime('%H:%M:%S')}",
+                xy=(first_fail["timestamp"], first_fail["delay_ms"]),
+                xytext=(first_fail["timestamp"],
+                        first_fail["delay_ms"] + (y_max - y_min) * 0.18),
+                fontsize=7.5,
+                color="#C62828",
+                fontweight="bold",
+                ha="center",
+                arrowprops=dict(arrowstyle="->", color="#C62828", lw=1.5),
+                bbox=dict(boxstyle="round,pad=0.3", fc="#FDECEA",
+                          ec="#EA4335", alpha=0.9, lw=0.8),
+                zorder=7
+            )
+
+        # ── Timeout threshold line + highlight slow probes ────────────
+        if reach_timeout_s is not None:
+            threshold_ms = reach_timeout_s * 1000.0
+            ax.axhline(
+                y=threshold_ms,
+                color="#EA4335",
+                linestyle="--",
+                linewidth=1.5,
+                alpha=0.75,
+                zorder=3,
+                label=f"Timeout threshold ({reach_timeout_s} s = {threshold_ms:.0f} ms)"
+            )
+            ax.text(
+                t_end, threshold_ms,
+                f"  {threshold_ms:.0f} ms",
+                va="center", ha="left", fontsize=7,
+                color="#EA4335", transform=ax.transData
+            )
+
+            over_threshold = df[df["delay_ms"] > threshold_ms]
+            if not over_threshold.empty:
+                half_interval = pd.Timedelta(seconds=max(1, (
+                    (t_end - t_start).total_seconds() / max(len(df), 1)
+                ) / 2))
+                for _, row in over_threshold.iterrows():
+                    ax.axvspan(
+                        row["timestamp"] - half_interval,
+                        row["timestamp"] + half_interval,
+                        color="#EA4335", alpha=0.18, zorder=1
+                    )
+                ax.scatter(
+                    over_threshold["timestamp"],
+                    over_threshold["delay_ms"],
+                    facecolors="none",
+                    edgecolors="#EA4335",
+                    s=80, linewidths=2.0, zorder=5,
+                    label=f"Slow probe (> {threshold_ms:.0f} ms)"
+                )
+
+        # ── X axis — adaptive time format based on total duration ─────
+        total_seconds = (t_end - t_start).total_seconds()
+        if total_seconds <= 300:
+            locator   = mdates.SecondLocator(interval=max(1, int(total_seconds / 6)))
+            formatter = mdates.DateFormatter("%H:%M:%S")
+        elif total_seconds <= 3600:
+            locator   = mdates.MinuteLocator(interval=max(1, int(total_seconds / 60 / 6)))
+            formatter = mdates.DateFormatter("%H:%M:%S")
+        elif total_seconds <= 86400:
+            locator   = mdates.MinuteLocator(interval=max(5, int(total_seconds / 60 / 6)))
+            formatter = mdates.DateFormatter("%d.%m %H:%M")
+        else:
+            locator   = mdates.HourLocator(interval=max(1, int(total_seconds / 3600 / 6)))
+            formatter = mdates.DateFormatter("%d.%m %H:%M")
+
+        ax.xaxis.set_major_locator(locator)
+        ax.xaxis.set_major_formatter(formatter)
+        ax.set_xlim(t_start, t_end)
+
+        existing = list(ax.get_xticks())
+        ax.set_xticks(sorted(set(existing + [date2num(t_start), date2num(t_end)])))
+        plt.setp(ax.xaxis.get_majorticklabels(), rotation=30, ha="right", fontsize=7.5)
+
+        ax.set_ylabel("Response Delay (ms)")
+        ax.set_xlabel("")
+        _apply_chart_style(ax, "Reachability — Response Delay Over Time")
+
+        # ── Legend outside the plot area — placed below the X axis ───
+        handles, labels_list = ax.get_legend_handles_labels()
+        ax.legend().remove()
+        fig.legend(
+            handles, labels_list,
+            loc="lower center",
+            bbox_to_anchor=(0.5, -0.01),
+            ncol=3,
+            fontsize=8,
+            framealpha=0.95,
+            frameon=True,
+            edgecolor="#DADCE0",
+            fancybox=True,
+        )
+
+        plt.tight_layout()
+        plt.subplots_adjust(bottom=0.30)  # reserve space for legend below chart
+        plt.savefig(p_delay, dpi=200, bbox_inches="tight", facecolor="white")
+        plt.close()
+
+        story.append(Image(p_delay, width=470, height=290))
+        story.append(Spacer(1, 6))
+
+        # ── Summary table below the chart ────────────────────────────
+        reach_ok      = df[df["category"] == "reachable"]
+        reach_rl      = df[df["category"] == "rate_limited"]
+        reach_timeout = df[df["category"] == "timeout"]
+        reach_5xx     = df[df["category"] == "error_5xx"]
+        reach_other   = df[df["category"] == "error_other"]
+        total_probes  = len(df)
+
+        avg_delay_ok = (
+            f"{reach_ok['elapsed_time_s'].mean() * 1000:.1f} ms"
+            if len(reach_ok) > 0 else "—"
+        )
+
+        # Count probes exceeding threshold (slow but not necessarily timed out)
+        slow_count = 0
+        if reach_timeout_s is not None:
+            slow_count = int((df["delay_ms"] > reach_timeout_s * 1000.0).sum())
+
+        S_hd = ParagraphStyle(
+            "dh", fontSize=8, textColor=C_WHITE,
+            fontName="Helvetica-Bold", alignment=TA_CENTER
+        )
+        S_cd = ParagraphStyle(
+            "dc", fontSize=9, textColor=C_TEXT,
+            fontName="Helvetica-Bold", alignment=TA_CENTER, leading=13
+        )
+        S_cd_red = ParagraphStyle(
+            "dc_red", fontSize=9, textColor=colors.HexColor("#EA4335"),
+            fontName="Helvetica-Bold", alignment=TA_CENTER, leading=13
+        )
+
+        threshold_label = (
+            f"Slow (> {reach_timeout_s * 1000:.0f} ms)"
+            if reach_timeout_s is not None else "Slow (> threshold)"
+        )
+
+        cw = (PAGE_W - 2 * MARGIN) / 8
+        compact_table = Table(
+            [
+                [
+                    Paragraph("Total probes",          S_hd),
+                    Paragraph("Reachable",             S_hd),
+                    Paragraph("Rate-limited (429)",    S_hd),
+                    Paragraph("Timeout",               S_hd),
+                    Paragraph("Server error (5xx)",    S_hd),
+                    Paragraph("Other error",           S_hd),
+                    Paragraph(threshold_label,         S_hd),
+                    Paragraph("Avg delay (reachable)", S_hd),
+                ],
+                [
+                    Paragraph(str(total_probes),        S_cd),
+                    Paragraph(str(len(reach_ok)),       S_cd),
+                    Paragraph(str(len(reach_rl)),       S_cd),
+                    Paragraph(str(len(reach_timeout)),  S_cd),
+                    Paragraph(str(len(reach_5xx)),      S_cd),
+                    Paragraph(str(len(reach_other)),    S_cd),
+                    Paragraph(str(slow_count),          S_cd_red if slow_count > 0 else S_cd),
+                    Paragraph(avg_delay_ok,             S_cd),
+                ],
+            ],
+            colWidths=[cw] * 8
+        )
+        compact_table.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, 0), C_PRIMARY_DARK),
+            ("BACKGROUND",    (0, 1), (-1, 1), C_WHITE),
+            ("BACKGROUND",    (2, 1), (2, 1),
+             colors.HexColor("#FFF8E1") if len(reach_rl) > 0 else C_WHITE),
+            ("BACKGROUND",    (3, 1), (3, 1),
+             colors.HexColor("#FFF3E0") if len(reach_timeout) > 0 else C_WHITE),
+            ("BACKGROUND",    (4, 1), (4, 1),
+             colors.HexColor("#FDECEA") if len(reach_5xx) > 0 else C_WHITE),
+            ("BACKGROUND",    (5, 1), (5, 1),
+             colors.HexColor("#F5F5F5") if len(reach_other) > 0 else C_WHITE),
+            ("BACKGROUND",    (6, 1), (6, 1),
+             colors.HexColor("#FDECEA") if slow_count > 0 else C_WHITE),
+            ("GRID",          (0, 0), (-1, -1), 0.4, C_BORDER),
+            ("TOPPADDING",    (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 4),
+            ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
+            ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ]))
+        story.append(compact_table)
+        story.append(Spacer(1, 12))
+
+    except Exception as e:
+        print(f"Error creating delay chart: {e}")
+        import traceback
+        traceback.print_exc()
+
+def add_network_traffic_charts(network_file, history_file, story):
+    if not os.path.exists(network_file):
+        print(f"Network file '{network_file}' not found, charts skipped")
+        return
+
+    try:
+        network_df = pd.read_csv(network_file, on_bad_lines='skip')
+        network_df = network_df[network_df['timestamp'] > 1_000_000_000].copy()
+
+        if network_df.empty:
+            print("Network file is empty after timestamp filtering, charts skipped")
+            return
+
+        network_df['timestamp'] = pd.to_datetime(network_df['timestamp'], unit='s')
+
+        # ============================================================
+        # Base values
+        # ============================================================
+
+        # Cumulative transferred data in bytes
+        rx_total_bytes = (
+            pd.to_numeric(network_df["rx_total"], errors="coerce").fillna(0)
+            - pd.to_numeric(network_df["rx_total"], errors="coerce").fillna(0).iloc[0]
+        ).clip(lower=0)
+
+        tx_total_bytes = (
+            pd.to_numeric(network_df["tx_total"], errors="coerce").fillna(0)
+            - pd.to_numeric(network_df["tx_total"], errors="coerce").fillna(0).iloc[0]
+        ).clip(lower=0)
+
+        # Speed: original columns are treated as kB/s, converted to kbit/s
+        rx_speed_kbit_s = pd.to_numeric(network_df['rx_kbps'], errors='coerce').fillna(0) * 8
+        tx_speed_kbit_s = pd.to_numeric(network_df['tx_kbps'], errors='coerce').fillna(0) * 8
+
+        # ============================================================
+        # Automatic unit helpers
+        # ============================================================
+
+        def _safe_max(series):
+            if series is None or len(series) == 0:
+                return 0.0
+            value = pd.to_numeric(series, errors="coerce").fillna(0).max()
+            return float(value) if pd.notna(value) else 0.0
+
+        def _choose_data_unit(bytes_series):
+            max_value = _safe_max(bytes_series)
+
+            if max_value >= 1024 ** 3:
+                return "GB", 1024 ** 3
+            elif max_value >= 1024 ** 2:
+                return "MB", 1024 ** 2
+            else:
+                return "kB", 1024
+
+        def _choose_speed_unit(kbit_series):
+            max_value = _safe_max(kbit_series)
+
+            if max_value >= 1_000_000:
+                return "Gbit/s", 1_000_000
+            elif max_value >= 1_000:
+                return "Mbit/s", 1_000
+            else:
+                return "kbit/s", 1
+
+        def _fmt_number(value):
+            try:
+                v = float(value)
+
+                if v == 0:
+                    return "0.00"
+
+                # Ak je hodnota kladná, ale po zaokrúhlení by vyzerala ako 0.00
+                if abs(v) < 0.01:
+                    return "<0.01"
+
+                return f"{v:,.2f}".replace(",", " ")
+
+            except Exception:
+                return "0.00"
+
+        def _axis_formatter():
+            def _fmt(x, pos):
+                try:
+                    x = float(x)
+                    if abs(x) >= 1000:
+                        return f"{x:,.0f}".replace(",", " ")
+                    elif abs(x) >= 10:
+                        return f"{x:.1f}"
+                    else:
+                        return f"{x:.2f}"
+                except Exception:
+                    return str(x)
+            return ticker.FuncFormatter(_fmt)
+
+        def _stat(series):
+            series = pd.to_numeric(series, errors="coerce").fillna(0)
+            return (
+                series.min() if len(series) > 0 else 0,
+                series.max() if len(series) > 0 else 0,
+                series.mean() if len(series) > 0 else 0,
+            )
+
+        # ============================================================
+        # Choose units
+        # ============================================================
+
+        rx_total_unit, rx_total_div = _choose_data_unit(rx_total_bytes)
+        tx_total_unit, tx_total_div = _choose_data_unit(tx_total_bytes)
+
+        rx_speed_unit, rx_speed_div = _choose_speed_unit(rx_speed_kbit_s)
+        tx_speed_unit, tx_speed_div = _choose_speed_unit(tx_speed_kbit_s)
+
+        rx_total_plot = rx_total_bytes / rx_total_div
+        tx_total_plot = tx_total_bytes / tx_total_div
+
+        rx_speed_plot = rx_speed_kbit_s / rx_speed_div
+        tx_speed_plot = tx_speed_kbit_s / tx_speed_div
+
+        # ============================================================
+        # Total Network Traffic chart
+        # ============================================================
+
+        p4 = os.path.join(REPORT_DIR, "chart_network_total.png")
+
+        fig, ax1 = plt.subplots(figsize=(7, 3))
+
+        ax1.fill_between(
+            network_df['timestamp'],
+            rx_total_plot,
+            alpha=0.12,
+            color="#1A73E8"
+        )
+        ax1.plot(
+            network_df['timestamp'],
+            rx_total_plot,
+            color="#1A73E8",
+            linewidth=1.8,
+            label=f"RX {rx_total_unit}"
+        )
+
+        ax1.set_ylabel(f"Received {rx_total_unit}", color="#1A73E8", fontsize=9)
+        ax1.tick_params(axis="y", colors="#1A73E8", labelsize=8)
+        ax1.yaxis.set_major_formatter(_axis_formatter())
+
+        ax2 = ax1.twinx()
+
+        ax2.fill_between(
+            network_df['timestamp'],
+            tx_total_plot,
+            alpha=0.08,
+            color="#7B2FBE"
+        )
+        ax2.plot(
+            network_df['timestamp'],
+            tx_total_plot,
+            color="#7B2FBE",
+            linewidth=1.8,
+            label=f"TX {tx_total_unit}"
+        )
+
+        ax2.set_ylabel(f"Transmitted {tx_total_unit}", color="#7B2FBE", fontsize=9)
+        ax2.tick_params(axis="y", colors="#7B2FBE", labelsize=8)
+        ax2.yaxis.set_major_formatter(_axis_formatter())
+        ax2.grid(False)
+
+        lines1, l1 = ax1.get_legend_handles_labels()
+        lines2, l2 = ax2.get_legend_handles_labels()
+
+        ax1.legend(
+            lines1 + lines2,
+            l1 + l2,
+            fontsize=8,
+            loc="upper left"
+        )
+
+        _apply_chart_style(ax1, "Total Network Traffic (Cumulative)")
+
+        ax2.spines["right"].set_visible(True)
+        ax2.spines["right"].set_color("#7B2FBE")
+
+        save_chart(p4)
+
+        story.append(Image(p4, width=440, height=190))
+        story.append(Spacer(1, 10))
+
+        # ============================================================
+        # Network Transfer Speed chart
+        # ============================================================
+
+        p5 = os.path.join(REPORT_DIR, "chart_network_speed.png")
+
+        fig, ax1 = plt.subplots(figsize=(7, 3))
+
+        ax1.fill_between(
+            network_df['timestamp'],
+            rx_speed_plot,
+            alpha=0.12,
+            color="#1A73E8"
+        )
+        ax1.plot(
+            network_df['timestamp'],
+            rx_speed_plot,
+            color="#1A73E8",
+            linewidth=1.8,
+            label=f"RX {rx_speed_unit}"
+        )
+
+        ax1.set_ylabel(f"RX Speed ({rx_speed_unit})", color="#1A73E8", fontsize=9)
+        ax1.tick_params(axis="y", colors="#1A73E8", labelsize=8)
+        ax1.yaxis.set_major_formatter(_axis_formatter())
+
+        ax2 = ax1.twinx()
+
+        ax2.fill_between(
+            network_df['timestamp'],
+            tx_speed_plot,
+            alpha=0.08,
+            color="#7B2FBE"
+        )
+        ax2.plot(
+            network_df['timestamp'],
+            tx_speed_plot,
+            color="#7B2FBE",
+            linewidth=1.8,
+            label=f"TX {tx_speed_unit}"
+        )
+
+        ax2.set_ylabel(f"TX Speed ({tx_speed_unit})", color="#7B2FBE", fontsize=9)
+        ax2.tick_params(axis="y", colors="#7B2FBE", labelsize=8)
+        ax2.yaxis.set_major_formatter(_axis_formatter())
+        ax2.grid(False)
+
+        lines1, labels1 = ax1.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+
+        ax1.legend(
+            lines1 + lines2,
+            labels1 + labels2,
+            fontsize=8,
+            loc="upper left"
+        )
+
+        _apply_chart_style(ax1, "Network Transfer Speed")
+
+        ax2.spines["right"].set_visible(True)
+        ax2.spines["right"].set_color("#7B2FBE")
+
+        save_chart(p5)
+
+        story.append(Image(p5, width=440, height=190))
+        story.append(Spacer(1, 12))
+
+        # ============================================================
+        # Statistics for table
+        # ============================================================
+
+        # Remove first zero value and keep only positive values
+        rx_total_nz = rx_total_bytes.iloc[1:]
+        tx_total_nz = tx_total_bytes.iloc[1:]
+
+        rx_total_nz = rx_total_nz[rx_total_nz > 0] / rx_total_div
+        tx_total_nz = tx_total_nz[tx_total_nz > 0] / tx_total_div
+
+        # Ignore almost-zero speeds
+        TRANSFER_THRESHOLD_KBIT_S = 8.0
+
+        rxs_nz = rx_speed_kbit_s[rx_speed_kbit_s > TRANSFER_THRESHOLD_KBIT_S] / rx_speed_div
+        txs_nz = tx_speed_kbit_s[tx_speed_kbit_s > TRANSFER_THRESHOLD_KBIT_S] / tx_speed_div
+
+        rx_total_min, rx_total_max, rx_total_avg = _stat(rx_total_nz)
+        tx_total_min, tx_total_max, tx_total_avg = _stat(tx_total_nz)
+
+        rx_spd_min, rx_spd_max, rx_spd_avg = _stat(rxs_nz)
+        tx_spd_min, tx_spd_max, tx_spd_avg = _stat(txs_nz)
+
+        # ============================================================
+        # Network Traffic Statistics table
+        # ============================================================
+
+        col_w = (PAGE_W - 2 * MARGIN - 4 * 8) / 4
+
+        def net_table(title, data_rows, header_color):
+            S_net_head = ParagraphStyle(
+                "net_head",
+                fontSize=8,
+                textColor=C_WHITE,
+                fontName="Helvetica-Bold",
+                leading=10
+            )
+
+            S_net_label = ParagraphStyle(
+                "net_label",
+                fontSize=8,
+                textColor=C_TEXT,
+                leading=10
+            )
+
+            S_net_value = ParagraphStyle(
+                "net_value",
+                fontSize=8,
+                textColor=C_TEXT,
+                alignment=TA_RIGHT,
+                leading=10,
+                wordWrap=None
+            )
+
+            rows = [[
+                Paragraph(f"<b>{title}</b>", S_net_head),
+                Paragraph("<b>Value</b>", S_net_head)
+            ]] + [
+                [
+                    Paragraph(r, S_net_label),
+                    Paragraph(v, S_net_value)
+                ]
+                for r, v in data_rows
+            ]
+
+            cw1 = col_w * 0.50
+            cw2 = col_w * 0.50
+
+            t = Table(
+                rows,
+                colWidths=[cw1, cw2],
+                rowHeights=[24, 22, 22, 22]
+            )
+
+            t.setStyle(TableStyle([
+                ("BACKGROUND",     (0, 0), (-1, 0), header_color),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [C_WHITE, C_ROW_ALT]),
+                ("GRID",           (0, 0), (-1, -1), 0.4, C_BORDER),
+
+                ("TOPPADDING",     (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING",  (0, 0), (-1, -1), 5),
+                ("LEFTPADDING",    (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING",   (0, 0), (-1, -1), 6),
+
+                ("ALIGN",          (0, 0), (-1, -1), "CENTER"),
+                ("VALIGN",         (0, 0), (-1, -1), "MIDDLE"),
+                ("FONTNAME",       (0, 0), (-1, 0), "Helvetica-Bold"),
+            ]))
+
+            return t
+
+        t1 = net_table(
+            f"RX Total [{rx_total_unit}]",
+            [
+                ("Min",     _fmt_number(rx_total_min)),
+                ("Max",     _fmt_number(rx_total_max)),
+                ("Average", _fmt_number(rx_total_avg)),
+            ],
+            C_PRIMARY
+        )
+
+        t2 = net_table(
+            f"RX [{rx_speed_unit}]",
+            [
+                ("Min",     _fmt_number(rx_spd_min)),
+                ("Max",     _fmt_number(rx_spd_max)),
+                ("Average", _fmt_number(rx_spd_avg)),
+            ],
+            colors.HexColor("#1558A8")
+        )
+
+        t3 = net_table(
+            f"TX Total [{tx_total_unit}]",
+            [
+                ("Min",     _fmt_number(tx_total_min)),
+                ("Max",     _fmt_number(tx_total_max)),
+                ("Average", _fmt_number(tx_total_avg)),
+            ],
+            colors.HexColor("#7B2FBE")
+        )
+
+        t4 = net_table(
+            f"TX [{tx_speed_unit}]",
+            [
+                ("Min",     _fmt_number(tx_spd_min)),
+                ("Max",     _fmt_number(tx_spd_max)),
+                ("Average", _fmt_number(tx_spd_avg)),
+            ],
+            colors.HexColor("#5E1A9C")
+        )
+
+        grid = Table(
+            [[t1, t2, t3, t4]],
+            colWidths=[col_w + 8] * 4,
+            rowHeights=[95],
+            hAlign="LEFT"
+        )
+
+        grid.setStyle(TableStyle([
+            ("LEFTPADDING",  (0, 0), (-1, -1), 3),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+            ("VALIGN",       (0, 0), (-1, -1), "TOP"),
+        ]))
+
+        story.append(ColorBand("  Network Traffic Statistics", height=24, font_size=11))
+        story.append(Spacer(1, 8))
+        story.append(grid)
+        story.append(Spacer(1, 12))
+
+    except Exception as e:
+        print(f"Error creating network charts: {e}")
+        story.append(Paragraph(
+            f"Error: {e}",
+            ParagraphStyle("err", fontSize=9, textColor=C_DANGER)
+        ))
+        story.append(Spacer(1, 12))
+
+
+# ================================================================
+# SIGNING
+# ================================================================
+
+def sign_report(input_path, output_path,
+                p12_path="cert.p12", p12_pass=b"yourpassword"):
+    """Digitálne podpíše PDF report pomocou .p12 certifikátu (pyHanko)."""
+    try:
+        from pyhanko.sign import signers
+        from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
+    except ImportError:
+        print("⚠ pyhanko nie je nainštalovaný. Signing preskočený.")
+        return
+
+    if not os.path.exists(p12_path):
+        print(f"⚠ Certifikát '{p12_path}' neexistuje. Signing preskočený.")
+        return
+
+    signer = signers.SimpleSigner.load_pkcs12(
+        pfx_file   = p12_path,
+        passphrase = p12_pass
+    )
+    with open(input_path, "rb") as inf:
+        w = IncrementalPdfFileWriter(inf)
+        with open(output_path, "wb") as out:
+            signers.sign_pdf(
+                w,
+                signers.PdfSignatureMetadata(field_name="Signature1"),
+                signer = signer,
+                output = out
+            )
+    print(f"✓ Signed PDF: {output_path}")
+
+
+# ================================================================
+# PDF GENERATION
+# ================================================================
+
+def create_pdf_report(stats_file, history_file, output_file,
+                      meta_file=None, network_file=None,
+                      reach_file=None,
+                      reach_timeout=None,
+                      comment=None, request_failure_threshold=None,
+                      target_ip=None, source_ip=None, interface=None,
+                      request_threshold=None, reach_threshold=None, test_type=None,
+                      src_ports=None, reach_src_ip=None,
+                      reach_interface=None, reach_interval=None,
+                      ip_pool_count=None, ip_pool_range=None,
+                      http_method=None, endpoint_path=None,
+                      processes=None, stop_timeout=None,
+                      connect_timeout=None, read_timeout=None,
+                      include_failures=False, target_rps=None,
+                      sign=False, p12_path=None, p12_pass=b"yourpassword"):
+
+    if load_dotenv is not None:
+        load_dotenv(os.path.join(BASE_DIR, "config.env"), override=True)
+    if meta_file    is None: meta_file    = META_FILE
+    if network_file is None: network_file = NETWORK_FILE
+    if reach_file   is None: reach_file   = REACH_FILE
+    if reach_timeout is None:
+        try:
+            import os as _os
+            _rt = _os.getenv("REACH_TIMEOUT")
+            reach_timeout = float(_rt) if _rt else None
+        except Exception:
+            reach_timeout = None
+
+    # ── Threshold normalization ───────────────────────────────────
+    # Internally thresholds are stored as fractions:
+    # 1% -> 0.01
+    # 5% -> 0.05
+    # Values may come either as 1 / 5 or as 0.01 / 0.05.
+    def _threshold_to_fraction(value, default_fraction):
+        try:
+            v = float(value)
+            if v >= 1.0:
+                v = v / 100.0
+            return max(0.0, min(v, 1.0))
+        except Exception:
+            return default_fraction
+
+    # Prefer values passed from test_config.csv snapshot.
+    # Use config.env only as fallback.
+    if request_failure_threshold is not None:
+        request_threshold = _threshold_to_fraction(request_failure_threshold, 0.01)
+    elif request_threshold is not None:
+        request_threshold = _threshold_to_fraction(request_threshold, 0.01)
+    else:
+        request_threshold = _threshold_to_fraction(
+            os.getenv("REQUEST_FAILURE_THRESHOLD"),
+            0.01
+        )
+
+    if reach_threshold is not None:
+        reach_threshold = _threshold_to_fraction(reach_threshold, 0.05)
+    else:
+        reach_threshold = _threshold_to_fraction(
+            os.getenv("REACHABILITY_FAILURE_THRESHOLD") or os.getenv("REACH_THRESHOLD"),
+            0.05
+        )
+
+    if not os.path.exists(stats_file):
+        print(f"CSV file '{stats_file}' not found.")
+        return
+
+    stats_df   = pd.read_csv(stats_file)
+    agg = stats_df[stats_df["Name"] == "Aggregated"]
+    if agg.empty:
+        print("Stats CSV has no valid rows.")
+        return
+
+    data_row     = agg.iloc[0]  # agg non-empty guaranteed by check above
+    req_count    = int(data_row["Request Count"])
+    fail_count   = int(data_row["Failure Count"])
+    success      = req_count - fail_count
+    failure_rate = round((fail_count / req_count) * 100, 2) if req_count > 0 else 0
+    avg_resp     = round(data_row["Average Response Time"] / 1000, 3)
+    median_resp  = round(data_row["Median Response Time"]  / 1000, 3)
+    min_resp     = round(data_row["Min Response Time"]     / 1000, 3)
+    max_resp     = round(data_row["Max Response Time"]     / 1000, 3)
+    rps          = round(data_row["Requests/s"], 2)
+    fails_s      = round(data_row["Failures/s"], 2)
+    avg_size     = round(data_row["Average Content Size"], 2)
+
+    # Načítaj reachability dáta zo sond  <-- NOVÉ
+    reach_reachable, reach_unreachable, reach_df = load_reachability_data(reach_file)
+
+    start_time, end_time, test_type_meta, target_host, target_ip_meta, used_ips = \
+        load_test_times(meta_file)
+
+    display_test_type  = test_type if (test_type and test_type.strip()) else test_type_meta
+    duration           = compute_duration(start_time, end_time)
+    resolved_target_ip = target_ip or target_ip_meta
+
+    # ── TCP/UDP overrides ──────────────────────────────────────
+    ip_pool_count = None
+    if test_type_meta in ("TCP", "UDP"):
+        try:
+            _meta = pd.read_csv(meta_file).iloc[0]
+            duration = f"{float(_meta.get('duration', 0)):.1f} s" if _meta.get("duration") else duration
+            ip_pool_count = int(_meta.get("ip_pool_count", 0)) or None
+            avg_size = int(_meta.get("packet_size", 0))
+        except Exception:
+            pass
+    # ───────────────────────────────────────────────────────────
+
+    # HTTP/S fallback: older snapshots may not contain ip_pool_count/ip_pool_range.
+    # In that case, read the current ip_pool.txt so the PDF does not show
+    # "Unknown" when a pool file is available.
+    if not ip_pool_count or str(ip_pool_count).strip().lower() in ("", "nan", "none", "null", "unknown", "0"):
+        fallback_count, fallback_range = _read_ip_pool_summary_from_file()
+        if fallback_count:
+            ip_pool_count = fallback_count
+            if not ip_pool_range or str(ip_pool_range).strip().lower() in ("", "nan", "none", "null", "unknown"):
+                ip_pool_range = fallback_range
+
+    if source_ip:
+        used_ips = source_ip
+    elif used_ips in ("Unknown", "", "nan", None):
+        used_ips = "Unknown"
+
+    ip_version = "IPv6" if (source_ip and ":" in source_ip) else "IPv4"
+        # HTTP/Locust parameters used during the test.
+    # Prefer values passed from test_config.csv snapshot.
+    # Fallback to config.env only if the snapshot value is missing.
+    http_method = str(
+        http_method or os.getenv("HTTP_METHOD", "GET")
+    ).strip().upper()
+
+    endpoint_path = str(
+        endpoint_path or os.getenv("ENDPOINT_PATH", "/")
+    ).strip()
+
+    if not endpoint_path:
+        endpoint_path = "/"
+
+    stop_timeout = str(
+        stop_timeout or os.getenv("STOP_TIMEOUT", "Unknown")
+    ).strip()
+
+    connect_timeout = str(
+        connect_timeout or os.getenv("CONNECT_TIMEOUT", "Unknown")
+    ).strip()
+
+    read_timeout = str(
+        read_timeout or os.getenv("READ_TIMEOUT", "Unknown")
+    ).strip()
+
+    processes = str(
+        processes or os.getenv("PROCESSES", "Unknown")
+    ).strip()
+
+    reach_interval = str(
+        reach_interval or os.getenv("REACH_INTERVAL", "Unknown")
+        ).strip()
+
+    reach_interface = str(
+        reach_interface or os.getenv("REACH_INTERFACE", "Unknown")
+    ).strip()
+
+    def _fmt_seconds(value):
+        if value in (None, "", "Unknown"):
+            return "Unknown"
+        try:
+            return f"{float(value):g} s"
+        except Exception:
+            return str(value)
+
+    topology_output = os.path.join(REPORT_DIR, "topology_diagram.png")
+    generate_topology_diagram(
+        target_ip    = target_ip,
+        source_ip    = source_ip,
+        interface    = interface,
+        output_file  = topology_output,
+        reach_src_ip = reach_src_ip
+    )
+
+    pdf = SimpleDocTemplate(
+        output_file, pagesize=A4,
+        leftMargin=MARGIN, rightMargin=MARGIN,
+        topMargin=MARGIN,  bottomMargin=28 * mm
+    )
+
+    S = {
+        "body":    ParagraphStyle("body",    fontSize=10, textColor=C_TEXT,        leading=15),
+        "muted":   ParagraphStyle("muted",   fontSize=9,  textColor=C_TEXT_MUTED,  leading=13),
+        "label":   ParagraphStyle("label",   fontSize=10, textColor=C_PRIMARY_DARK,
+                                  fontName="Helvetica-Bold"),
+        "value":   ParagraphStyle("value",   fontSize=10, textColor=C_TEXT),
+        "comment": ParagraphStyle("comment", fontSize=10, textColor=C_TEXT,
+                                  leading=15, leftIndent=8, rightIndent=8,
+                                  spaceBefore=4, spaceAfter=4,
+                                  borderColor=C_PRIMARY, borderWidth=0.8,
+                                  borderPadding=10, borderRadius=6,
+                                  backColor=C_SURFACE2),
+    }
+
+    story     = []
+    logo_path = os.path.join(BASE_DIR, "vut_logo.png")
+
+    # ── HERO HEADER ───────────────────────────────────────────────
+    story.append(HeroHeader(
+        title     = "Locust Load Test Report",
+        subtitle  = f"{target_host}  •  {ip_version}  •  {datetime.now().strftime('%d. %m. %Y  %H:%M')}",
+        logo_path = logo_path if os.path.exists(logo_path) else None
+    ))
+    story.append(Spacer(1, 14))
+
+    # ── METRIC CARDS ──────────────────────────────────────────────
+    story.append(make_metric_cards([
+        ("Requests",     str(req_count),     C_PRIMARY_DARK),
+        ("Requests/s",   str(rps),           C_PRIMARY_DARK),
+        ("Avg Response", f"{avg_resp} s",    C_PRIMARY),
+        ("Duration",     duration,           C_PRIMARY),
+        ("Failures",     str(fail_count),    C_DANGER),
+        ("Failure Rate", f"{failure_rate}%", C_DANGER),
+    ]))
+    story.append(Spacer(1, 16))
+
+    # ── TEST INFORMATION ──────────────────────────────────────────
+    story.append(ColorBand("  Test Information"))
+    story.append(Spacer(1, 8))
+    source_ports_display = str(src_ports).strip() if src_ports else ""
+    target_rps = str(target_rps or os.getenv("TARGET_RPS", "0")).strip()
+
+    if float(target_rps) == -1:
+        rps_limit_text = "Unlimited"
+    else:
+        rps_limit_text = f"{target_rps} req/s per user"
+
+    if source_ports_display.lower() in ("nan", "none", "null", ""):
+        source_ports_display = _get_os_port_range()
+
+    show_host = str(target_host).strip() != str(resolved_target_ip).strip()
+
+    if test_type_meta not in ("TCP", "UDP"):
+        story.append(make_info_table([
+            [Paragraph("Test Type", S["label"]), Paragraph(display_test_type, S["value"])],
+            [Paragraph("HTTP Method", S["label"]), Paragraph(str(http_method), S["value"])],
+            [Paragraph("Target Host", S["label"]), Paragraph(str(target_host), S["value"])],
+            [Paragraph("Endpoint(s)", S["label"]), Paragraph(str(endpoint_path), S["value"])],
+            [Paragraph("Target IP", S["label"]), Paragraph(str(resolved_target_ip), S["value"])],
+            [Paragraph("IP Version", S["label"]), Paragraph(ip_version, S["value"])],
+            [Paragraph("Start Time", S["label"]), Paragraph(str(start_time), S["value"])],
+            [Paragraph("End Time", S["label"]), Paragraph(str(end_time), S["value"])],
+            [Paragraph("Duration", S["label"]), Paragraph(duration, S["value"])],
+            [Paragraph("IP Pool range", S["label"]),
+             Paragraph(str(ip_pool_range) if ip_pool_range else str(used_ips), S["value"])],
+            [Paragraph("IP Pool count", S["label"]),
+             Paragraph(str(ip_pool_count) if ip_pool_count else "Unknown", S["value"])],
+            [Paragraph("Source ports", S["label"]), Paragraph(source_ports_display, S["value"])],
+            [Paragraph("Reachability source IP", S["label"]),
+             Paragraph(str(reach_src_ip) if reach_src_ip else "Unknown", S["value"])],
+            [Paragraph("Reachability interface", S["label"]), Paragraph(str(reach_interface), S["value"])],
+            [Paragraph("Reachability interval", S["label"]), Paragraph(_fmt_seconds(reach_interval), S["value"])],
+            [Paragraph("Reachability timeout", S["label"]), Paragraph(_fmt_seconds(reach_timeout), S["value"])],
+            [Paragraph("Stop timeout", S["label"]), Paragraph(_fmt_seconds(stop_timeout), S["value"])],
+            [Paragraph("Connect timeout", S["label"]), Paragraph(_fmt_seconds(connect_timeout), S["value"])],
+            [Paragraph("Read timeout", S["label"]), Paragraph(_fmt_seconds(read_timeout), S["value"])],
+            [Paragraph("Processes", S["label"]), Paragraph(str(processes), S["value"])],
+            [Paragraph("Request failure threshold", S["label"]),
+             Paragraph(f"{request_threshold * 100:.1f}%", S["value"])],
+            [Paragraph("Reachability failure threshold", S["label"]),
+             Paragraph(f"{reach_threshold * 100:.1f}%", S["value"])],
+            [Paragraph("Report generated", S["label"]),
+             Paragraph(datetime.now().strftime('%d-%m-%Y  %H:%M:%S'), S["value"])],
+        ], col_widths=[160, None]))
+        story.append(Spacer(1, 14))
+    else:
+        story.append(make_info_table([
+            [Paragraph("Test Type",         S["label"]), Paragraph(display_test_type,              S["value"])],
+            [Paragraph("Protocol",          S["label"]), Paragraph(test_type_meta,                 S["value"])],
+            *([[Paragraph("Target Host", S["label"]), Paragraph(str(target_host), S["value"])]] if show_host else []),
+            [Paragraph("Target IP",         S["label"]), Paragraph(str(resolved_target_ip),        S["value"])],
+            [Paragraph("IP Version",        S["label"]), Paragraph(ip_version,                     S["value"])],
+            [Paragraph("Start Time",        S["label"]), Paragraph(str(start_time),                S["value"])],
+            [Paragraph("End Time",          S["label"]), Paragraph(str(end_time),                  S["value"])],
+            [Paragraph("Duration",          S["label"]), Paragraph(duration,                       S["value"])],
+            [Paragraph("Used IP range",     S["label"]), Paragraph(str(used_ips),                  S["value"])],
+            [Paragraph("IP Pool range",     S["label"]), Paragraph(str(ip_pool_range) if ip_pool_range else str(used_ips), S["value"])],
+            [Paragraph("IP Pool count",     S["label"]), Paragraph(str(ip_pool_count) if ip_pool_count else "Unknown", S["value"])],
+            [Paragraph("Source ports",      S["label"]), Paragraph(source_ports_display, S["value"])],
+            [Paragraph("Reachability source IP", S["label"]), Paragraph(str(reach_src_ip) if reach_src_ip else "Unknown", S["value"])],
+            [Paragraph("Reachability interface", S["label"]), Paragraph(str(reach_interface), S["value"])],
+            [Paragraph("Reachability interval",  S["label"]), Paragraph(_fmt_seconds(reach_interval), S["value"])],
+            [Paragraph("Reachability timeout",   S["label"]), Paragraph(_fmt_seconds(reach_timeout), S["value"])],
+            [Paragraph("Stop timeout",      S["label"]), Paragraph(_fmt_seconds(stop_timeout), S["value"])],
+            [Paragraph("Connect timeout",   S["label"]), Paragraph(_fmt_seconds(connect_timeout), S["value"])],
+            [Paragraph("Read timeout",      S["label"]), Paragraph(_fmt_seconds(read_timeout), S["value"])],
+            [Paragraph("Processes",         S["label"]), Paragraph(str(processes), S["value"])],
+            [Paragraph("Request failure threshold",      S["label"]), Paragraph(f"{request_threshold*100:.1f}%", S["value"])],
+            [Paragraph("Reachability failure threshold", S["label"]), Paragraph(f"{reach_threshold * 100:.1f}%", S["value"])],
+            [Paragraph("RPS limit per user", S["label"]), Paragraph(rps_limit_text, S["value"])],
+            [Paragraph("Report generated",  S["label"]),
+             Paragraph(datetime.now().strftime('%d-%m-%Y  %H:%M:%S'),                            S["value"])],
+        ], col_widths=[160, None]))
+        story.append(Spacer(1, 14))
+    # ── Comment ─────────────────────────────────────────────────
+    if comment and comment.strip():
+        story.append(ColorBand("  Comment", bg=colors.HexColor("#5F6368")))
+        story.append(Spacer(1, 8))
+        story.append(Paragraph(comment.replace("\n", "<br/>"), S["comment"]))
+        story.append(Spacer(1, 14))
+
+    if test_type_meta not in ("TCP", "UDP"):
+        story.append(PageBreak())
+
+    # ── PERFORMANCE OVERVIEW ──────────────────────────────────────
+    story.append(ColorBand("  Performance Overview"))
+    story.append(Spacer(1, 8))
+
+    request_threshold_pct = round(request_threshold * 100, 1)
+
+    wd_df, wd_stats, wd_changes = None, None, None
+
+    if test_type_meta in ("TCP", "UDP"):
+        wd_df, wd_stats, wd_changes = load_watchdog_reachability(reach_file)
+        if wd_stats is not None:
+            pct_down = float(wd_stats["pct_down"])
+            watchdog_stable = pct_down <= reach_threshold
+        else:
+            watchdog_stable = True
+        packet_stable = failure_rate <= request_threshold_pct
+        is_stable = watchdog_stable and packet_stable
+    else:
+        is_stable = failure_rate <= request_threshold_pct
+
+    stable_text   = "Stable" if is_stable else "Unstable"
+    stable_color  = C_ACCENT if is_stable else C_DANGER
+
+    story.append(make_info_table([
+        [Paragraph("Request Count",         S["label"]), Paragraph(str(req_count),      S["value"])],
+        [Paragraph("Success Count",         S["label"]), Paragraph(str(success),        S["value"])],
+        [Paragraph("Failure Count",         S["label"]), Paragraph(str(fail_count),     S["value"])],
+        [Paragraph("Failure Rate",          S["label"]), Paragraph(f"{failure_rate}%",  S["value"])],
+        [Paragraph("Request failure threshold", S["label"]), Paragraph(f"{request_threshold_pct}%", S["value"])],
+        [Paragraph("Load Test Status",      S["label"]),
+         Paragraph(stable_text, ParagraphStyle(
+             "stable", fontSize=10, fontName="Helvetica-Bold", textColor=stable_color
+         ))],
+        [Paragraph("Median Response Time",  S["label"]), Paragraph(f"{median_resp} s",  S["value"])],
+        [Paragraph("Average Response Time", S["label"]), Paragraph(f"{avg_resp} s",     S["value"])],
+        [Paragraph("Min Response Time",     S["label"]), Paragraph(f"{min_resp} s",     S["value"])],
+        [Paragraph("Max Response Time",     S["label"]), Paragraph(f"{max_resp} s",     S["value"])],
+        [Paragraph("Requests/s",            S["label"]), Paragraph(str(rps),            S["value"])],
+        [Paragraph("Failures/s",            S["label"]), Paragraph(str(fails_s),        S["value"])],
+        [Paragraph("Avg Content Size",      S["label"]), Paragraph(f"{avg_size} B",     S["value"])],
+    ], col_widths=[200, None]))
+    story.append(Spacer(1, 14))
+    story.append(PageBreak())
+    add_stages_table(story, S, BASE_DIR)
+    if test_type_meta not in ("TCP", "UDP"):
+        story.append(PageBreak())
+
+    # ── Failures OVERVIEW ──────────────────────────────────────
+    if include_failures and os.path.exists(FAILURES_FILE):
+        fdf = pd.read_csv(FAILURES_FILE)
+        if not fdf.empty:
+            story.append(ColorBand("Failure Details", bg=C_DANGER))
+            story.append(Spacer(1, 8))
+
+            S_cell = ParagraphStyle(
+                "fcell",
+                fontSize=8,
+                textColor=C_TEXT,
+                leading=11,
+                wordWrap="CJK"
+            )
+            S_head = ParagraphStyle(
+                "fhead",
+                fontSize=8,
+                textColor=colors.white,
+                fontName="Helvetica-Bold",
+                leading=11
+            )
+
+            rows = [[
+                Paragraph("Method",      S_head),
+                Paragraph("Endpoint",    S_head),
+                Paragraph("Occurrences", S_head),
+                Paragraph("Error",       S_head),
+            ]]
+
+            for _, row in fdf.iterrows():
+                error_text = str(row.get("Error", "")).replace("<", "&lt;").replace(">", "&gt;")
+                rows.append([
+                    Paragraph(str(row.get("Method", "")),      S_cell),
+                    Paragraph(str(row.get("Name", "")),        S_cell),
+                    Paragraph(str(row.get("Occurrences", "")), S_cell),
+                    Paragraph(error_text,                      S_cell),
+                ])
+
+            t = Table(rows, colWidths=[45, 100, 55, 250])
+            t.setStyle(TableStyle([
+                ("BACKGROUND",     (0, 0), (-1, 0), C_DANGER),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [C_WHITE, C_ROW_ALT]),
+                ("GRID",           (0, 0), (-1, -1), 0.4, C_BORDER),
+                ("LEFTPADDING",    (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING",   (0, 0), (-1, -1), 6),
+                ("TOPPADDING",     (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING",  (0, 0), (-1, -1), 4),
+                ("VALIGN",         (0, 0), (-1, -1), "TOP"),
+            ]))
+
+            story.append(t)
+            story.append(Spacer(1, 14))
+            if test_type_meta not in ("TCP", "UDP"):
+                story.append(PageBreak())
+
+    # ── TOPOLOGY ─────────────────────────────────────────────────
+    if os.path.exists(topology_output):
+        story.append(ColorBand("  Network Topology"))
+        story.append(Spacer(1, 10))
+        story.append(Image(topology_output, width=490, height=430))
+        story.append(Spacer(1, 6))
+        story.append(Paragraph(
+            "Network topology showing the test configuration with attack generation, "
+            "monitoring (tester), and reachability verification components.",
+            S["muted"]
+        ))
+        story.append(Spacer(1, 16))
+        if test_type_meta not in ("TCP", "UDP"):
+            story.append(PageBreak())
+
+    # ── REACHABILITY  (pie chart + timeline) ──────────────────────
+    if test_type_meta not in ("TCP", "UDP"):
+        p_pie = os.path.join(REPORT_DIR, "chart_pie.png")
+        story.append(ColorBand("  Reachability"))
+        story.append(Spacer(1, 10))
+
+        if reach_reachable is not None and reach_df is not None:
+            # Multi-category pie chart — matches delay chart categories exactly
+            from collections import Counter
+
+            def _classify_pie(code):
+                if 200 <= code < 300:
+                    return "reachable"
+                elif code == 429:
+                    return "rate_limited"
+                elif code == 0:
+                    return "timeout"
+                elif 500 <= code < 600:
+                    return "error_5xx"
+                else:
+                    return "error_other"
+
+            counts = Counter(reach_df["status_code"].apply(_classify_pie))
+            pie_total = sum(counts.values())
+
+            mapping = {
+                "reachable":    ("Reachable (2xx)",       "#34A853"),
+                "rate_limited": ("Rate-limited (429)",    "#F9AB00"),
+                "timeout":      ("Timeout / No response", "#FF6D00"),
+                "error_5xx":    ("Server error (5xx)",    "#EA4335"),
+                "error_other":  ("Other error (4xx)",     "#9E9E9E"),
+            }
+
+            labels_pie, sizes_pie, colors_pie = [], [], []
+            for cat, (label, color) in mapping.items():
+                if counts.get(cat, 0) > 0:
+                    labels_pie.append(f"{label}\n({counts[cat]})")
+                    sizes_pie.append(counts[cat])
+                    colors_pie.append(color)
+
+            fig, ax = plt.subplots(figsize=(5, 3.5))
+            wedges, _, autotexts = ax.pie(
+                sizes_pie,
+                colors=colors_pie,
+                startangle=90,
+                autopct="%1.1f%%",
+                pctdistance=0.75,
+                wedgeprops={"edgecolor": "white", "linewidth": 2}
+            )
+            for a in autotexts:
+                a.set_fontsize(8)
+                a.set_color("black")
+                a.set_fontweight("bold")
+            ax.legend(
+                wedges, labels_pie,
+                loc="lower center",
+                bbox_to_anchor=(0.5, -0.22),
+                ncol=3,
+                fontsize=7.5,
+                framealpha=0.9,
+                frameon=True,
+                edgecolor="#DADCE0",
+            )
+            ax.set_title("Reachability Overview", fontsize=11,
+                         fontweight="bold", color="#202124")
+            fig.patch.set_facecolor("white")
+            plt.subplots_adjust(bottom=0.22)
+            save_chart(p_pie, dpi=220)
+            story.append(Image(p_pie, width=320, height=280))
+            story.append(Spacer(1, 4))
+        else:
+            # Fallback — no reachability.csv, use Locust stats (2 categories only)
+            pie_reachable   = success
+            pie_unreachable = fail_count
+            pie_total       = req_count
+            sizes_pie  = [pie_reachable, pie_unreachable] if pie_total > 0 else [1, 0]
+            labels_pie = ["Reachable", "Unreachable"]
+            colors_pie = ["#34A853", "#EA4335"]
+
+            fig, ax = plt.subplots(figsize=(5, 3.5))
+            wedges, _, autotexts = ax.pie(
+                sizes_pie, colors=colors_pie, startangle=90,
+                autopct="%1.1f%%", pctdistance=0.75,
+                wedgeprops={"edgecolor": "white", "linewidth": 2}
+            )
+            for i, a in enumerate(autotexts):
+                a.set_fontsize(9)
+                a.set_text(f"{labels_pie[i]}\n{a.get_text()}")
+                a.set_color("white")
+                a.set_fontweight("bold")
+            ax.set_title("Reachable vs Unreachable", fontsize=11,
+                         fontweight="bold", color="#202124")
+            fig.patch.set_facecolor("white")
+            save_chart(p_pie, dpi=220)
+            story.append(Image(p_pie, width=320, height=260))
+            story.append(Spacer(1, 4))
+            story.append(Paragraph(
+                "reachability.csv not found — fallback to Locust request statistics "
+                f"({pie_reachable} success, {pie_unreachable} failures)",
+                ParagraphStyle("src_note", fontSize=8, textColor=C_TEXT_MUTED, alignment=TA_CENTER)
+            ))
+
+    story.append(Spacer(1, 10))
+
+    # Timeline and delay chart (only if reachability.csv available)
+    if reach_df is not None:
+        add_reachability_delay_chart(reach_df, story, reach_timeout_s=reach_timeout)
+
+    story.append(PageBreak())
+
+    # ── TCP/UDP Watchdog reachability ─────────────────────────
+    if test_type_meta in ("TCP", "UDP"):
+
+        if wd_df is not None and wd_stats is not None:
+            story.append(ColorBand("  Reachability (Watchdog)"))
+            story.append(Spacer(1, 10))
+
+            # ── Pie chart ──────────────────────────────────────
+            fig, ax = plt.subplots(figsize=(4, 3))
+            sizes = [wd_stats["up_count"], wd_stats["down_count"]]
+            labels = [f"Up ({wd_stats['pct_up']}%)", f"Down ({wd_stats['pct_down']}%)"]
+            pie_colors = ["#34A853", "#EA4335"]
+            wedges, _, autotexts = ax.pie(
+                sizes, colors=pie_colors, startangle=90,
+                autopct="%1.1f%%", pctdistance=0.75,
+                wedgeprops={"edgecolor": "white", "linewidth": 2}
+            )
+            for a in autotexts:
+                a.set_fontsize(9)
+                a.set_color("white")
+                a.set_fontweight("bold")
+            ax.legend(wedges, labels, loc="lower center",
+                      bbox_to_anchor=(0.5, -0.15), ncol=2, fontsize=8)
+            ax.set_title("Reachability Overview", fontsize=11,
+                         fontweight="bold", color="#202124")
+            fig.patch.set_facecolor("white")
+            p_wd_pie = os.path.join(REPORT_DIR, "watchdog_pie.png")
+            save_chart(p_wd_pie, dpi=220)
+            story.append(Image(p_wd_pie, width=280, height=220))
+            story.append(Spacer(1, 4))
+            story.append(Paragraph(
+                "Availability is measured by ICMP probes sent at regular intervals. "
+                "Each probe interval is counted as either up or down, independent of flood traffic volume. "
+                "This metric reflects server reachability, not individual packet success rate.",
+                ParagraphStyle("wd_note", fontSize=8, textColor=C_TEXT_MUTED, alignment=TA_CENTER,
+                               leading=11, spaceBefore=2)
+            ))
+            story.append(Spacer(1, 8))
+            # ── Summary table ──────────────────────────────────
+            story.append(make_info_table([
+                [Paragraph("Total state changes", S["label"]), Paragraph(str(wd_stats["total_changes"]), S["value"])],
+                [Paragraph("Went down (up→down)", S["label"]), Paragraph(str(wd_stats["went_down"]), S["value"])],
+                [Paragraph("Came up (down→up)", S["label"]), Paragraph(str(wd_stats["came_up"]), S["value"])],
+                [Paragraph("% Up", S["label"]), Paragraph(f"{wd_stats['pct_up']}%", S["value"])],
+                [Paragraph("% Down", S["label"]), Paragraph(f"{wd_stats['pct_down']}%", S["value"])],
+            ], col_widths=[160, None]))
+            story.append(Spacer(1, 10))
+
+            # ── State change log (if any) ──────────────────────
+            if wd_changes:
+                story.append(Paragraph("State Change Log", S["label"]))
+                story.append(Spacer(1, 4))
+                story.append(make_info_table(
+                    [[Paragraph("Timestamp", S["label"]), Paragraph("Event", S["label"])]] +
+                    [[Paragraph(c["timestamp"], S["value"]), Paragraph(c["direction"], S["value"])]
+                     for c in wd_changes],
+                    col_widths=[160, None]
+                ))
+            else:
+                story.append(Paragraph("No state changes detected during this session.", S["value"]))
+
+            story.append(Spacer(1, 14))
+            story.append(PageBreak())
+    # ───────────────────────────────────────────────────────────
+    # ── TIME SERIES CHARTS ────────────────────────────────────────
+    if os.path.exists(history_file):
+        history_df = pd.read_csv(history_file)
+        story.append(ColorBand("  Time Series Charts"))
+        story.append(Spacer(1, 10))
+        add_time_series_charts(
+            history_df,
+            story,
+            request_failure_threshold=request_threshold * 100
+        )
+
+    # ── NETWORK TRAFFIC ───────────────────────────────────────────
+    story.append(PageBreak())
+    story.append(ColorBand("  Network Traffic Analysis"))
+    story.append(Spacer(1, 10))
+    add_network_traffic_charts(network_file, history_file, story)
+
+    # ── FINAL AVAILABILITY SUMMARY ───────────────────────────────
+    # Final Availability Summary sa pridá iba vtedy, ak reachability
+    # zaznamenala aspoň jeden problém. Ak boli všetky probes úspešné,
+    # sekcia by iba duplicitne opakovala Reachability Overview.
+    show_final_availability = False
+
+    if reach_df is not None and not reach_df.empty:
+        reachability_ok = reach_df["status_code"].between(200, 299)
+        unreachable_count = int((~reachability_ok).sum())
+
+        if unreachable_count > 0:
+            show_final_availability = True
+
+    else:
+        # Ak reachability.csv neexistuje, môže sa použiť fallback
+        # na Locust štatistiky. Vtedy má summary stále význam.
+        if fail_count > 0:
+            show_final_availability = True
+
+    if show_final_availability:
+        story.append(PageBreak())
+        add_final_availability_summary_chart(
+            story,
+            reach_df=reach_df,
+            success=success,
+            fail_count=fail_count
+        )
+
+    # ── BUILD ─────────────────────────────────────────────────────
+    pdf.build(story, onFirstPage=_page_template, onLaterPages=_page_template)
+
+    for f in ["chart_pie.png", "chart_rps_failures.png", "chart_response_times.png",
+              "chart_users.png", "chart_network_total.png", "chart_network_speed.png",
+              "chart_reach_timeline.png", "chart_reach_delay.png", "topology_diagram.png",
+              "chart_availability_summary.png","watchdog_pie.png"]:
+        full_path = os.path.join(REPORT_DIR, f)
+        if os.path.exists(full_path):
+            os.remove(full_path)
+
+    print(f"✓ PDF report generated: {output_file}")
+
+    if sign:
+        signed_output = output_file.replace(".pdf", "_signed.pdf")
+        resolved_p12 = (
+            p12_path if (p12_path and os.path.isabs(p12_path))
+            else os.path.join(REPORT_DIR, p12_path or "cert.p12")
+        )
+        try:
+            sign_report(output_file, signed_output, resolved_p12, p12_pass)
+            if os.path.exists(signed_output):
+                os.replace(signed_output, output_file)
+                print(f"✓ Signed PDF replaced original: {output_file}")
+        except Exception as e:
+            print(f"⚠ Signing failed: {e}")
+
+
+# === MAIN ===
+if __name__ == "__main__":
+    create_pdf_report(
+        stats_file   = STATS_FILE,
+        history_file = HISTORY_FILE,
+        output_file  = PDF_FILE,
+    )
+
+
+

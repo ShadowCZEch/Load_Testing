@@ -1,11 +1,14 @@
+import socket
 from pathlib import Path
 import ipaddress
 
-
-def load_config_path(path="Config.env"):
-    pathp = Path(path)
+def load_config_path(path=None):
+    if path is None:
+        pathp = Path(__file__).resolve().parents[1] / "config.env"
+    else:
+        pathp = Path(path)
     if not pathp.is_file():
-        raise FileNotFoundError(f"Config file not found: {path}")
+        raise FileNotFoundError(f"Config file not found: {pathp}")
     cfg = {}
     with pathp.open("r", encoding="utf-8") as f:
         for line in f:
@@ -15,7 +18,7 @@ def load_config_path(path="Config.env"):
             if "=" not in line:
                 continue
             k, v = line.split("=", 1)
-            cfg[k.strip().lower()] = v.strip()
+            cfg[k.strip().lower()] = v.strip().strip("'\"")
     return cfg
 
 def load_protocol(cfg):
@@ -27,28 +30,24 @@ def load_protocol(cfg):
         raise ValueError("Invalid 'Protocol' value in config file, TCP or UDP expected.")
     return protocol
 
-def load_version(cfg):
-    pick = cfg.get("pick")
-    if pick is None:
-        raise ValueError("Parameter 'pick' missing in configuration file.")
-    pick = str(pick).strip()
-    if pick not in ("4", "6"):
-        raise ValueError("Invalid 'pick' in config file, expected 4 or 6.")
-    return pick
-
-def load_ipaddr(cfg,pick):
+def load_ipaddr(cfg):
     ipaddr = cfg.get("ipaddr")
     if ipaddr is None:
         raise ValueError("Parameter 'ipaddr' missing in configuration file.")
     ipaddr = ipaddr.strip()
     try:
-        if pick == "4":
-            ipaddress.IPv4Address(ipaddr)
-        elif pick == "6":
-            ipaddress.IPv6Address(ipaddr)
+        ip_obj = ipaddress.ip_address(ipaddr)
+        return str(ip_obj),ip_obj.version
     except ValueError:
-        raise ValueError("Incorrect IP address for selected mode.")
-    return ipaddr
+        pass
+
+    try:
+        addr_info=socket.getaddrinfo(ipaddr,None)
+        resolved_ip=addr_info[0][4][0]
+        version = ipaddress.ip_address(resolved_ip).version
+        return resolved_ip,version
+    except (socket.gaierror, IndexError):
+        raise ValueError(f"Error when translating address: {ipaddr}")
 
 def load_packetsize(cfg):
     packet_size = cfg.get("packet_size")
@@ -66,29 +65,29 @@ def load_time(cfg):
         raise ValueError("'time_total' is out of range.")
     return time_total
 
-def load_source_ip_minimal(cfg,pick):
+def load_source_ip_minimal(cfg,version):
     source_ip_minimal = cfg.get("source_ip_minimal")
     if source_ip_minimal is None:
         raise ValueError("'source_ip_minimal' is missing in configuration file.")
     load_ip_minimal = str(source_ip_minimal).strip()
     try:
-        if pick == "4":
+        if version == "4":
             ipaddress.IPv4Address(load_ip_minimal)
-        elif pick == "6":
+        elif version == "6":
             ipaddress.IPv6Address(load_ip_minimal)
     except ValueError:
         raise ValueError("IP address is not valid.")
     return source_ip_minimal
 
-def load_source_ip_maximal(cfg,pick):
+def load_source_ip_maximal(cfg,version):
     source_ip_maximal = cfg.get("source_ip_maximal")
     if source_ip_maximal is None:
         raise ValueError("'source_ip_maximal' is missing in configuration file.")
     load_ip_maximal = str(source_ip_maximal).strip()
     try:
-        if pick == "4":
-            ipaddress.IPv4Address(load_source_ip_maximal)
-        elif pick == "6":
+        if version == "4":
+            ipaddress.IPv4Address(load_ip_maximal)
+        elif version == "6":
             ipaddress.IPv6Address(load_ip_maximal)
     except ValueError:
         raise ValueError("IP address is not valid.")
@@ -175,16 +174,25 @@ def spawn_rate(cfg):
         raise ValueError("'spawn_rate' is in unacceptable range.")
     return spwn_rate
 
+def users(cfg):
+    workers = cfg.get("workers")
+    if workers is None:
+        return "-1"
+    check = int(workers)
+    if check < -1:
+        raise ValueError("Invalid number of workers.")
+    return workers
+
 def config_load():
     cfg = load_config_path()
-    pick = load_protocol(cfg)
     protocol = load_protocol(cfg)
-    version = load_version(cfg)
-    ipaddr = load_ipaddr(cfg, version)
+    ipaddr = load_ipaddr(cfg)
+    target_ip = ipaddr[0]
+    version = str(ipaddr[1])
     packet_size = load_packetsize(cfg)
     time_total = load_time(cfg)
-    source_ip_minimal = load_source_ip_minimal(cfg,pick)
-    source_ip_maximal = load_source_ip_maximal(cfg,pick)
+    source_ip_minimal = load_source_ip_minimal(cfg,version)
+    source_ip_maximal = load_source_ip_maximal(cfg,version)
     unique_users_count = load_unique_users_count(cfg)
     tcp_range_start=scan_port_range_tcp_start(cfg)
     tcp_range_end=scan_port_range_tcp_end(cfg)
@@ -193,11 +201,12 @@ def config_load():
     interval = user_interval(cfg)
     ping_interval = poll_interval(cfg)
     spwn_rate = spawn_rate(cfg)
+    workers = users(cfg)
 
     return {
         "protocol": protocol,
-        "pick": version,
-        "ipaddr": ipaddr,
+        "ipaddr": target_ip,
+        "version": version,
         "packet_size": packet_size,
         "time_total": time_total,
         "source_ip_minimal": source_ip_minimal,
@@ -210,10 +219,16 @@ def config_load():
         "user_interval": interval,
         "poll_interval": ping_interval,
         "spawn_rate": spwn_rate,
+        "workers": workers,
     }
 
 class Config_Load:
     _instance = None
+
+    @classmethod
+    def reset(cls):
+        cls._instance = None
+
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
@@ -222,7 +237,6 @@ class Config_Load:
 
     def __getitem__(self, key):
         return self.data.get(key)
-
     def get(self,key=None,default=None):
         if key is None:
             return self.data

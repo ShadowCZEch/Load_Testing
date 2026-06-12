@@ -1,0 +1,4502 @@
+#!/usr/bin/env python3
+import tkinter as tk
+from typing import Any
+import tkinter.filedialog as fd
+import customtkinter as ctk
+import subprocess
+import threading
+import ipaddress
+import sys
+import os
+import time
+import queue
+import socket
+import shutil
+import pandas as pd
+import csv
+import signal
+import glob
+import json
+from collections import defaultdict
+from urllib.parse import urlparse
+from dotenv import load_dotenv
+from CTkToolTip import CTkToolTip
+import multiprocessing
+from network.Reachability import run as run_reachability_check
+from misc import main as test_main
+from datetime import datetime
+
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("blue")
+
+BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(BASE_DIR, "network"))
+sys.path.insert(0, os.path.join(BASE_DIR, "report"))
+IP_POOL_DIR = os.path.join(BASE_DIR, "IP_pool")
+
+load_dotenv(dotenv_path=os.path.join(BASE_DIR, "config.env"), override=True)
+
+from report.Locust_report_v3 import create_pdf_report
+from network.Create_IP_Pool_skript import main as create_pool
+from network.Remove_IP_Pool_skript import main as remove_pool
+from network.Network_monitor import NetworkMonitor
+from network.Watchdog import Watchdog
+
+DATA_DIR   = os.path.join(BASE_DIR, "data")
+os.makedirs(DATA_DIR, exist_ok=True)
+REPORT_DIR = os.path.join(BASE_DIR, "report")
+
+# ── Themes ─────────────────────────────────────────────────────────
+THEMES = {
+    "Locust Dark": {
+        "BG_SIDEBAR":  "#121212",
+        "BG_MAIN":     "#111111",
+        "BG_CARD":     "#1a1a1a",
+        "ACCENT":      "#2a5f3a",
+        "ACCENT_HOVER":"#1e4a2c",
+        "FG_TEXT":     "#ffffff",
+        "FG_MUTED":    "#888888",
+        "FG_LABEL":    "#cccccc",
+        "FG_HEADER":   "#2a5f3a",
+        "BG_INPUT":    "#242424",
+        "BTN_DANGER":  "#922b21",
+        "BTN_START":   "#2a5f3a",
+        "BTN_REPORT":  "#7D3C98",
+        "BTN_SETUP":   "#2a5f3a",
+    },
+    "Navy Blue": {
+        "BG_SIDEBAR":   "#222831",
+        "BG_MAIN":      "#1c2128",
+        "BG_CARD":      "#222831",
+        "ACCENT":       "#23395B",
+        "ACCENT_HOVER": "#23395B",
+        "FG_TEXT":      "#DBD4D3",
+        "FG_MUTED":     "#8899a6",
+        "FG_LABEL":     "#FFFFFF",
+        "FG_HEADER":    "#FFFFFF",
+        "BG_INPUT":     "#2d3340",
+        "BTN_DANGER":   "#922b21",
+        "BTN_START":    "#23395B",
+        "BTN_REPORT":   "#23395B",
+        "BTN_SETUP":    "#23395B",
+    },
+    "Light": {
+        "BG_SIDEBAR":   "#282b30",
+        "BG_MAIN":      "#36393e",
+        "BG_CARD":      "#424549",
+        "ACCENT":       "#7289da",
+        "ACCENT_HOVER": "#5b73c7",
+        "FG_TEXT":      "#dcddde",
+        "FG_MUTED":     "#72767d",
+        "FG_LABEL":     "#b9bbbe",
+        "FG_HEADER":    "#7289da",
+        "BG_INPUT":     "#1e2124",
+        "BTN_DANGER":   "#ed4245",
+        "BTN_START":    "#7289da",
+        "BTN_REPORT":   "#7289da",
+        "BTN_SETUP":    "#7289da",
+    },
+    "Darkest": {
+        "BG_SIDEBAR":   "#121214",
+        "BG_MAIN":      "#1a1a1e",
+        "BG_CARD":      "#242428",
+        "ACCENT":       "#5b73c7",
+        "ACCENT_HOVER": "#7289da",
+        "FG_TEXT":      "#dcddde",
+        "FG_MUTED":     "#72767d",
+        "FG_LABEL":     "#b9bbbe",
+        "FG_HEADER":    "#7289da",
+        "BG_INPUT":     "#0d0e10",
+        "BTN_DANGER":   "#ed4245",
+        "BTN_START":    "#5b73c7",
+        "BTN_REPORT":   "#5b73c7",
+        "BTN_SETUP":    "#5b73c7",
+    },
+    "redflix": {
+        "BG_SIDEBAR":   "#141414",
+        "BG_MAIN":      "#181818",
+        "BG_CARD":      "#222222",
+        "ACCENT":       "#800000",
+        "ACCENT_HOVER": "#b20710",
+        "FG_TEXT":      "#ffffff",
+        "FG_MUTED":     "#808080",
+        "FG_LABEL":     "#b3b3b3",
+        "FG_HEADER":    "#ffffff",
+        "BG_INPUT":     "#0d0d0d",
+        "BTN_DANGER":   "#A40031",
+        "BTN_START":    "#015041",
+        "BTN_REPORT":   "#015041",
+        "BTN_SETUP":    "#015041",
+    },
+}
+
+STAGE_PRESETS = {
+    "Flat": [
+        {"duration": 300, "users": 50, "spawn_rate": 5,
+         "wait_mode": "between", "wait_min": "1", "wait_max": "3"}
+    ],
+
+    "Stress": [
+        {"duration": 60,  "users": 10,  "spawn_rate": 5,
+         "wait_mode": "constant", "wait_min": "1",   "wait_max": "3"},
+        {"duration": 60,  "users": 50,  "spawn_rate": 10,
+         "wait_mode": "constant", "wait_min": "0.5", "wait_max": "2"},
+        {"duration": 60,  "users": 100, "spawn_rate": 20,
+         "wait_mode": "constant", "wait_min": "0.5", "wait_max": "2"},
+        {"duration": 120, "users": 300, "spawn_rate": 50,
+         "wait_mode": "constant", "wait_min": "0.1", "wait_max": "1"},
+        {"duration": 60,  "users": 1,   "spawn_rate": 10,
+         "wait_mode": "constant", "wait_min": "1",   "wait_max": "3"},
+    ],
+
+    "Spike": [
+        {"duration": 30, "users": 10,  "spawn_rate": 2,
+         "wait_mode": "constant", "wait_min": "1",   "wait_max": "1"},
+        {"duration": 30, "users": 500, "spawn_rate": 200,
+         "wait_mode": "constant", "wait_min": "0.1", "wait_max": "0.1"},
+        {"duration": 30, "users": 10,  "spawn_rate": 50,
+         "wait_mode": "constant", "wait_min": "1",   "wait_max": "1"},
+    ],
+
+    "Endurance": [
+        {"duration": 300,  "users": 10, "spawn_rate": 2,
+         "wait_mode": "between", "wait_min": "2", "wait_max": "5"},
+        {"duration": 6900, "users": 25, "spawn_rate": 1,
+         "wait_mode": "between", "wait_min": "2", "wait_max": "5"},
+        {"duration": 300,  "users": 1,  "spawn_rate": 5,
+         "wait_mode": "between", "wait_min": "2", "wait_max": "5"},
+    ],
+
+    "Capacity": [
+        {"duration": 120, "users": 10,  "spawn_rate": 2,
+         "wait_mode": "constant_throughput", "wait_min": "1",  "wait_max": "1"},
+        {"duration": 120, "users": 25,  "spawn_rate": 2,
+         "wait_mode": "constant_throughput", "wait_min": "2",  "wait_max": "2"},
+        {"duration": 120, "users": 50,  "spawn_rate": 5,
+         "wait_mode": "constant_throughput", "wait_min": "3",  "wait_max": "3"},
+        {"duration": 120, "users": 100, "spawn_rate": 10,
+         "wait_mode": "constant_throughput", "wait_min": "5",  "wait_max": "5"},
+        {"duration": 120, "users": 150, "spawn_rate": 10,
+         "wait_mode": "constant_throughput", "wait_min": "7",  "wait_max": "7"},
+        {"duration": 120, "users": 200, "spawn_rate": 20,
+         "wait_mode": "constant_throughput", "wait_min": "10", "wait_max": "10"},
+    ],
+}
+
+
+def apply_theme(name):
+    global C_SIDEBAR, C_CONTENT, C_CARD, C_ACTIVE, C_HOVER
+    global C_TEXT, C_MUTED, C_LABEL, C_HEADER, C_ENTRY
+    global C_DANGER, C_SUCCESS, C_PURPLE, C_BLUE
+    t = THEMES[name]
+    C_SIDEBAR = t["BG_SIDEBAR"]
+    C_CONTENT = t["BG_MAIN"]
+    C_CARD    = t["BG_CARD"]
+    C_ACTIVE  = t["ACCENT"]
+    C_HOVER   = t["ACCENT_HOVER"]
+    C_TEXT    = t["FG_TEXT"]
+    C_MUTED   = t["FG_MUTED"]
+    C_LABEL   = t["FG_LABEL"]
+    C_HEADER  = t["FG_HEADER"]
+    C_ENTRY   = t["BG_INPUT"]
+    C_DANGER  = t["BTN_DANGER"]
+    C_SUCCESS = t["BTN_START"]
+    C_PURPLE  = t["BTN_REPORT"]
+    C_BLUE    = t["BTN_SETUP"]
+
+
+ZOOM_MIN  = 0.5
+ZOOM_MAX  = 2.0
+ZOOM_STEP = 0.1
+
+
+# ============================================================
+#  HELPERS
+# ============================================================
+
+
+
+def darken(hex_color, amount=40):
+    hex_color = str(hex_color).lstrip("#")
+
+    if len(hex_color) != 6:
+        return "#000000"
+
+    r, g, b = tuple(
+        max(0, int(hex_color[i:i+2], 16) - amount)
+        for i in (0, 2, 4)
+    )
+
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+def parse_ports(port_str):
+    """Parse port string supporting ranges and combinations, e.g. '1024-2000,8080'."""
+    if not port_str or not port_str.strip():
+        return None
+    result = []
+    for part in port_str.split(","):
+        part = part.strip()
+        if "-" in part:
+            try:
+                parts = part.split("-", maxsplit=1)
+                start, end = int(parts[0]), int(parts[1])
+                if start > end:
+                    print(f"WARNING: reversed port range '{part}', skipping")
+                    continue
+                result.extend(range(start, end + 1))
+            except (ValueError, IndexError):
+                print(f"WARNING: invalid port range '{part}', skipping")
+        else:
+            try:
+                result.append(int(part))
+            except ValueError:
+                print(f"WARNING: invalid port '{part}', skipping")
+    return result or None
+def normalize_endpoint_paths(value):
+    """
+    Normalize comma-separated endpoint paths.
+
+    Example:
+      "/,/health,/api/status,api/products"
+    becomes:
+      "/,/health,/api/status,/api/products"
+    """
+    raw = str(value or "/").strip()
+
+    if not raw:
+        return "/"
+
+    paths = []
+
+    for part in raw.split(","):
+        path = part.strip()
+
+        if not path:
+            continue
+
+        if not path.startswith("/"):
+            path = "/" + path
+
+        paths.append(path)
+
+    return ",".join(paths) if paths else "/"
+
+def is_ipv6(ip):
+    try:
+        socket.inet_pton(socket.AF_INET6, ip)
+        return True
+    except (socket.error, OSError):
+        return False
+
+
+def ipv6_range_to_list(start_str, end_str, max_count=65536):
+    import ipaddress
+    start = int(ipaddress.IPv6Address(start_str))
+    end   = int(ipaddress.IPv6Address(end_str))
+    total = end - start + 1
+    if total > max_count:
+        raise ValueError(
+            f"IPv6 range too large ({total:,} addresses). "
+            f"Maximum allowed is {max_count:,}. Use a smaller range or increase max_count."
+        )
+    return [str(ipaddress.IPv6Address(i)) for i in range(start, end + 1)]
+
+def ipv6_prefix_to_list(prefix_str, max_count=256, existing_ips=None, excluded_ips=None):
+    """
+    Generate the next block of IPv6 addresses from a prefix.
+
+    - Generates at most max_count addresses.
+    - Existing IPs are skipped.
+    - Excluded IPs are skipped as well.
+    - This prevents adding the target/server IP into the source IP pool.
+    """
+    net = ipaddress.IPv6Network(prefix_str, strict=False)
+    existing = set(existing_ips or [])
+    excluded = set(excluded_ips or [])
+
+    skip_ips = existing | excluded
+    result = []
+
+    for ip in net.hosts():
+        ip_str = str(ip)
+
+        if ip_str in skip_ips:
+            continue
+
+        result.append(ip_str)
+
+        if len(result) >= max_count:
+            break
+
+    return result
+
+def bind_card(widget, cmd, hover_color, normal_color):
+    def on_click(e): cmd()
+    def on_enter(e): widget.configure(fg_color=hover_color)
+    def on_leave(e): widget.configure(fg_color=normal_color)
+    for w in [widget] + list(widget.winfo_children()):
+        w.bind("<Button-1>", on_click)
+        w.bind("<Enter>", on_enter)
+        w.bind("<Leave>", on_leave)
+
+def make_scroll_frame(parent, **kwargs):
+    sf = ctk.CTkScrollableFrame(
+        parent,
+        fg_color="transparent",
+        corner_radius=0,
+        label_text="",
+        label_fg_color="transparent",
+        **kwargs
+    )
+    try:
+        sf._label_frame.grid_remove()
+    except Exception:
+        pass
+    return sf
+
+def get_network_interfaces():
+    interfaces = []
+    try:
+        with open("/proc/net/dev", "r") as f:
+            for line in f.readlines()[2:]:
+                iface = line.split(":")[0].strip()
+                if iface and iface != "lo":
+                    interfaces.append(iface)
+    except Exception:
+        pass
+    return interfaces if interfaces else ["ens33", "eth0", "wlan0"]
+
+# ============================================================
+#  POOL FILE HELPERS
+# ============================================================
+
+def parse_pool_lines(path):
+    """
+    Číta pool súbor a vracia zoznam reťazcov vo formáte 'IP/prefix'.
+    Podporuje:
+      - nový formát:  '192.168.10.10/32'
+      - starý formát: '192.168.10.10'  (prefix sa doplní z hlavičkového komentára
+                                         alebo zostane None)
+    Vracia: list of (ip_str, prefix_str|None)  — napr. [('192.168.10.10', '32'), ...]
+    """
+    entries      = []
+    header_prefix = None
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith("#"):
+                if "prefix=/" in line:
+                    try:
+                        header_prefix = line.split("prefix=/")[1].strip()
+                    except Exception:
+                        pass
+                continue
+            if "/" in line:
+                ip, prefix = line.split("/", 1)
+                entries.append((ip.strip(), prefix.strip()))
+            else:
+                entries.append((line, header_prefix))
+    return entries
+
+
+def pool_lines_to_cidr(path):
+    result = []
+    for ip, prefix in parse_pool_lines(path):
+        result.append(f"{ip}/{prefix}" if prefix else ip)
+    return result
+
+
+def read_pool_for_interface(path, default_prefix=None):
+    out = []
+    for ip, prefix in parse_pool_lines(path):
+        p = prefix or default_prefix
+        out.append((ip, p))
+    return out
+
+
+# ============================================================
+#  SAVE POOL DIALOG
+# ============================================================
+
+class SavePoolDialog(ctk.CTkToplevel):
+
+
+    def __init__(self, master, ip_pool_dir, suggested_name, **kwargs):
+        super().__init__(master, **kwargs)
+        self.result_name   = None
+        self.result_mode   = None
+        self.result_target = None
+
+        self.title("Save IP Pool")
+        self.geometry("500x290")
+        self.resizable(False, False)
+        self.configure(fg_color=C_CARD)
+        self.transient(master)
+        self.update_idletasks()
+        self.deiconify()
+        self.grab_set()
+        self.focus_force()
+
+        self._ip_pool_dir = ip_pool_dir
+        self._existing    = self._scan_pools()
+
+        self._build(suggested_name)
+        self.wait_window()
+        self._stop_requested = False
+
+
+    def _scan_pools(self):
+        if not os.path.isdir(self._ip_pool_dir):
+            return []
+        return sorted(
+            [f for f in os.listdir(self._ip_pool_dir) if f.endswith(".txt")],
+            reverse=True
+        )
+
+    def _build(self, suggested_name):
+        self.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            self, text="💾  Save IP Pool",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color=C_TEXT
+        ).grid(row=0, column=0, padx=20, pady=(16, 4), sticky="w")
+
+        ctk.CTkLabel(self, text="Pool name", font=ctk.CTkFont(size=12),
+                     text_color=C_LABEL
+                     ).grid(row=1, column=0, padx=20, pady=(10, 2), sticky="w")
+
+        self._name_entry = ctk.CTkEntry(self, fg_color=C_ENTRY, width=460)
+        self._name_entry.insert(0, suggested_name)
+        self._name_entry.grid(row=2, column=0, padx=20, pady=(0, 10), sticky="ew")
+
+        # Mode
+        self._mode = ctk.StringVar(value="new")
+        mode_frame = ctk.CTkFrame(self, fg_color="transparent")
+        mode_frame.grid(row=3, column=0, padx=20, pady=(0, 6), sticky="w")
+
+        ctk.CTkRadioButton(
+            mode_frame, text="New file", variable=self._mode, value="new",
+            command=self._on_mode_change,
+            fg_color=C_ACTIVE, hover_color=C_HOVER, border_color=C_MUTED,
+            font=ctk.CTkFont(size=12)
+        ).pack(side="left", padx=(0, 20))
+
+        ctk.CTkRadioButton(
+            mode_frame, text="Append / merge with existing",
+            variable=self._mode, value="append",
+            command=self._on_mode_change,
+            fg_color=C_ACTIVE, hover_color=C_HOVER, border_color=C_MUTED,
+            font=ctk.CTkFont(size=12),
+            state="normal" if self._existing else "disabled"
+        ).pack(side="left")
+
+        # Existing file selector (initially hidden)
+        self._existing_combo = ctk.CTkComboBox(
+            self,
+            values=self._existing if self._existing else ["(no saved pools yet)"],
+            fg_color=C_ENTRY, button_color=C_ACTIVE,
+            button_hover_color=C_HOVER, dropdown_fg_color=C_CARD,
+            dropdown_text_color=C_TEXT, width=460
+        )
+        if self._existing:
+            self._existing_combo.set(self._existing[0])
+        self._existing_combo.grid(row=4, column=0, padx=20, pady=(0, 10), sticky="ew")
+        self._existing_combo.grid_remove()
+
+        # Buttons
+        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+        btn_frame.grid(row=5, column=0, padx=20, pady=(6, 16), sticky="e")
+
+        ctk.CTkButton(
+            btn_frame, text="Cancel", width=90, height=32,
+            fg_color=C_ENTRY, hover_color=C_HOVER,
+            font=ctk.CTkFont(size=12), corner_radius=6,
+            command=self.destroy
+        ).pack(side="left", padx=(0, 8))
+
+        ctk.CTkButton(
+            btn_frame, text="💾 Save", width=90, height=32,
+            fg_color=C_ACTIVE, hover_color=C_HOVER,
+            font=ctk.CTkFont(size=12), corner_radius=6,
+            command=self._confirm
+        ).pack(side="left")
+
+    def _on_mode_change(self):
+        if self._mode.get() == "append" and self._existing:
+            self._existing_combo.grid()
+        else:
+            self._existing_combo.grid_remove()
+
+    def _confirm(self):
+        name = self._name_entry.get().strip()
+        if not name:
+            return
+        if name.lower().endswith(".txt"):
+            name = name[:-4]
+        self.result_name = name
+        self.result_mode = self._mode.get()
+        self.result_target = (
+            os.path.join(self._ip_pool_dir, self._existing_combo.get())
+            if self.result_mode == "append" and self._existing
+            else None
+        )
+        self.destroy()
+
+class LocustGUI(ctk.CTk):
+
+    NAV_ITEMS = [
+        ("⚙",  "Config"),
+        ("🌐", "HTTP/S"),
+        ("🌐", "TCP"),
+        ("🌐", "UDP"),
+        ("📄", "Generate Report"),
+        ("📋", "Reports"),
+    ]
+
+    LBL_W  = 160
+    ENTR_W = 220
+
+    def __init__(self, initial_theme="Navy Blue"):
+        super().__init__()
+        apply_theme(initial_theme)
+        self._current_theme   = initial_theme
+        self._network_monitor = None
+        self._reach_stop_event = threading.Event()
+
+        self.title("Locust Test GUI")
+        self.geometry("1100x800")
+        self.minsize(900, 600)
+        self.configure(fg_color=C_CONTENT)
+
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=0)
+
+        self.locust_process  = None
+        self.log_queue       = queue.Queue()
+        self.locustfile_path = None
+        self.entries         = {}
+        self._labels         = {}
+        self._active_page    = None
+        self._nav_buttons    = {}
+        self._pages          = {}
+        self._zoom           = 1.0
+
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+        self._page_state = {}
+        self._page_frames = {}
+        self._stages      = []
+        self._stage_rows  = []
+        self._preset_btns = {}
+
+        self._build_sidebar()
+        self._build_log()
+        self._build_main()
+        self._load_env_to_gui()
+
+        self._show_page("Config")
+        self._poll_log_queue()
+
+        self.bind_all("<Control-equal>",       self._zoom_in)
+        self.bind_all("<Control-plus>",        self._zoom_in)
+        self.bind_all("<Control-KP_Add>",      self._zoom_in)
+        self.bind_all("<Control-minus>",       self._zoom_out)
+        self.bind_all("<Control-KP_Subtract>", self._zoom_out)
+        self.bind_all("<Control-0>",           self._zoom_reset)
+
+        self._bind_scroll()
+
+        self._stop_requested = False
+        self._stop_enabled = False
+        self._locustfile_paths: dict[str, str | None] = {
+            "HTTP/S": None,
+            "TCP": None,
+            "UDP": None,
+        }
+    # ================================================================
+    # THEME
+    # ================================================================
+
+    def _change_theme(self, theme_name):
+        if theme_name == self._current_theme:
+            return
+
+        if self.locust_process is not None and self.locust_process.poll() is None:
+            self.write_log("⚠ Stop the running test before changing theme.")
+            self._theme_combo.set(self._current_theme)
+            return
+
+        self.write_log(f"🎨 Restarting GUI with theme: {theme_name}")
+        os.environ["LOCUST_GUI_THEME"] = theme_name
+        self.after(100, self._restart_app_process)   # type: ignore
+
+    def _restart_app_process(self):
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+
+
+    # ================================================================
+    # ENV LOAD / SAVE
+    # ================================================================
+
+    def _load_env_to_gui(self):
+        _tcp_start = os.getenv('SCAN_PORT_RANGE_TCP_START', '')
+        _tcp_end = os.getenv('SCAN_PORT_RANGE_TCP_END', '')
+        mapping = {
+            "target":           os.getenv("TARGET_HOST"),
+            "endpoint_path":    os.getenv("ENDPOINT_PATH", "/"),
+            "interface":        os.getenv("INTERFACE"),
+            "test_type":        os.getenv("TEST_TYPE"),
+            "ip_start":         os.getenv("IP_START"),
+            "ip_end":           os.getenv("IP_END"),
+            "ipv4prefix":       os.getenv("IPV4PREFIX", "32"),
+            "ip6_start":        os.getenv("IP6_START"),
+            "ip6_end":          os.getenv("IP6_END"),
+            "ip6_prefix":       os.getenv("IP6_PREFIX"),
+            "ipv6rangeprefix":  os.getenv("IPV6RPREFIX", "128"),
+            "processes":        os.getenv("PROCESSES"),
+            "http_method":      os.getenv("HTTP_METHOD", "GET"),
+            "stop_timeout":     os.getenv("STOP_TIMEOUT", "60"),
+            "connect_timeout":  os.getenv("CONNECT_TIMEOUT", "5"),
+            "read_timeout":     os.getenv("READ_TIMEOUT", "15"),
+            "reach_interval":   os.getenv("REACH_INTERVAL"),
+            "reach_timeout":    os.getenv("REACH_TIMEOUT"),
+            "reach_src_ip":     os.getenv("REACH_SRC_IP", ""),
+            "reach_interface":  os.getenv("REACH_INTERFACE", ""),
+            "request_threshold": os.getenv("REQUEST_FAILURE_THRESHOLD", "1"),
+            "reach_threshold":  os.getenv("REACH_THRESHOLD", "5"),
+            # ── TCP/UDP ─────────────────────────────
+            }
+        for key, value in mapping.items():
+            if value and key in self.entries:
+                widget = self.entries[key]
+                if isinstance(widget, ctk.CTkComboBox):
+                    widget.set(value)
+                else:
+                    widget.delete(0, "end")
+                    widget.insert(0, value)
+
+        self.ipv6_mode.set(os.getenv("IPV6_MODE", "range"))
+        self._on_ipv6_mode_change()
+        if os.getenv("IP_VERSION", "ipv4") == "ipv6":
+            self.ip_tab.set("IPv6")
+
+        # ── Stages ─────────────────────────────
+        # HTTP/S stages are not stored in self._pages, so they must be
+        # initialized explicitly. Otherwise the HTTP/S page can open with
+        # only the table header and no default stage row.
+        stages_raw = os.getenv("STAGES", "")
+        try:
+            loaded_stages = json.loads(stages_raw) if stages_raw else [dict(s) for s in STAGE_PRESETS["Stress"]]
+            if not isinstance(loaded_stages, list) or not loaded_stages:
+                loaded_stages = [dict(s) for s in STAGE_PRESETS["Stress"]]
+        except Exception:
+            loaded_stages = [dict(s) for s in STAGE_PRESETS["Stress"]]
+
+        prev_active_page = self._active_page
+
+        # HTTP/S default stages
+        self._stages = [dict(s) for s in loaded_stages]
+        http_stage_context = {
+            "stages": self._stages,
+            "stages_frame": self._stages_frame,
+            "stage_rows": self._stage_rows,
+            "stages_total_lbl": self._stages_total_lbl,
+            "hdr_min_lbl": self._hdr_min_lbl,
+            "hdr_max_lbl": self._hdr_max_lbl,
+            "preset_btn_widgets": self._preset_btns,
+        }
+        self._active_page = "HTTP/S"
+        self._render_stage_rows_for(http_stage_context)
+        self._stage_rows = http_stage_context["stage_rows"]
+
+        for name, btn in self._preset_btns.items():
+            is_default_stress = not stages_raw and name == "Stress"
+            btn.configure(
+                fg_color=C_ACTIVE if is_default_stress else C_ENTRY,
+                text_color="white" if is_default_stress else C_TEXT,
+            )
+
+        # TCP/UDP pages keep their own simpler stage tables.
+        for tab_key, q in self._pages.items():
+            if not isinstance(q, dict) or "preset_btn_widgets" not in q:
+                continue
+            self._active_page = tab_key
+            if not q.get("stages"):
+                q["stages"] = [{"duration": 60, "users": 10, "spawn_rate": 1, "packet_size": 60}]
+            self._render_stage_rows_for(q)
+
+        self._active_page = prev_active_page
+
+    def _on_close(self):
+        if self._active_page in ("TCP", "UDP"):
+            self._save_tcp_udp_env()
+        elif self._active_page == "HTTP/S":
+            self._save_env_from_gui(log=False)
+        self.destroy()
+
+    def _load_tcp_udp_env(self):
+        load_dotenv(dotenv_path=os.path.join(BASE_DIR, "tcp_udp.env"), override=True)
+
+        _tcp_start = os.getenv('SCAN_PORT_RANGE_TCP_START', '')
+        _tcp_end = os.getenv('SCAN_PORT_RANGE_TCP_END', '')
+        if _tcp_start == '1' and _tcp_end == '65535':
+            src_ports = ''
+        elif _tcp_start == _tcp_end:
+            src_ports = _tcp_start
+        else:
+            src_ports = f"{_tcp_start}-{_tcp_end}"
+
+        mapping = {
+            "tcp_processes": os.getenv("TCP_WORKERS"),
+            "udp_processes": os.getenv("UDP_WORKERS"),
+            "tcp_stop_timeout": os.getenv("TCP_STOP_TIMEOUT", "60"),
+            "udp_stop_timeout": os.getenv("UDP_STOP_TIMEOUT", "60"),
+            "tcp_target_rps": os.getenv("TCP_TARGET_RPS", "-1"),
+            "udp_target_rps": os.getenv("UDP_TARGET_RPS", "-1"),
+            "src_ports": src_ports,
+        }
+        for key, value in mapping.items():
+            if key in self.entries:
+                widget = self.entries[key]
+                widget.delete(0, "end")
+                if value:
+                    widget.insert(0, value)
+        for tab_key in ("TCP", "UDP"):
+            p = self._pages.get(tab_key)
+            if isinstance(p, dict) and "stages" in p:
+                stages_raw = os.getenv(f"{tab_key}_STAGES", "")
+                if stages_raw:
+                    try:
+                        stages = json.loads(stages_raw)
+                        p["stages"] = [{
+                            "duration": s.get("duration", 60),
+                            "users": s.get("users", 10),
+                            "spawn_rate": s.get("spawn_rate", 1),
+                            "packet_size": s.get("packet_size", 60),
+                        } for s in stages]
+                        self._render_stage_rows_for(p, simple_mode=True)
+                    except Exception as e:
+                        print(f"[WARN] Could not load stages for {tab_key}: {e}")
+
+    def _save_env_from_gui(self, log=True):
+        env_path = os.path.join(BASE_DIR, "config.env")
+        # For TCP/UDP
+        _stages = self._get_stages()
+        _first_stage = _stages[0] if _stages else {}
+        _pfx = self._active_page.lower().replace("/", "_").replace(" ", "_")
+
+        mapping = {
+            "TARGET_HOST":     self.get("target"),
+            "ENDPOINT_PATH":   normalize_endpoint_paths(self.get("endpoint_path") or "/"),
+            "INTERFACE":       self.get("interface"),
+            "TEST_TYPE":       self.get("test_type"),
+            "IP_VERSION":      self._active_ip_version(),
+            "IP_START":        self.entries["ip_start"].get().strip(),
+            "IP_END":          self.entries["ip_end"].get().strip(),
+            "IPV4PREFIX":      self.entries["ipv4prefix"].get(),
+            "IP6_START":       self.entries["ip6_start"].get().strip(),
+            "IP6_END":         self.entries["ip6_end"].get().strip(),
+            "IP6_PREFIX":      self.entries["ip6_prefix"].get().strip(),
+            "IPV6_MODE":       self.ipv6_mode.get(),
+            "IPV6RPREFIX":     self._get_prefix_len(),
+            "PROCESSES":       self.get("processes"),
+            "HTTP_METHOD":     self.get("http_method") or "GET",
+            "REQUEST_BODY":    self.get_request_body(),
+            "STOP_TIMEOUT":    self.get("stop_timeout"),
+            "CONNECT_TIMEOUT": self.get("connect_timeout") or "5",
+            "READ_TIMEOUT":    self.get("read_timeout") or "15",
+            "SSL_VERIFY":      "true" if self._ssl_verify_var.get() else "false",
+            "ACCEPT_ENCODING": "identity" if getattr(self, "_disable_compression_var", tk.BooleanVar(value=False)).get() else "",
+            "REACH_INTERVAL":  self.get("reach_interval"),
+            "REACH_TIMEOUT":   self.get("reach_timeout"),
+            "TARGET_RPS": self._get_target_rps_value(),
+            "REACH_SRC_IP":    self.get("reach_src_ip"),
+            "REACH_INTERFACE": self.get("reach_interface"),
+            "REQUEST_FAILURE_THRESHOLD": self.get("request_threshold") or "1",
+            "REACH_THRESHOLD": self.get("reach_threshold") or "5",
+            "STAGES":          json.dumps(self._get_stages()),
+        }
+        # Validate all numeric timeout fields before saving
+        timeout_fields = [
+            ("STOP_TIMEOUT",    "Stop timeout"),
+            ("REACH_TIMEOUT",   "Reach timeout"),
+            ("CONNECT_TIMEOUT", "Connect timeout"),
+            ("READ_TIMEOUT",    "Read timeout"),
+        ]
+        for env_key, label in timeout_fields:
+            val = mapping.get(env_key, "")
+            if val:
+                try:
+                    assert float(val) > 0
+                except (ValueError, AssertionError):
+                    self.write_log(
+                        f"⚠ {label} '{val}' is invalid (must be a positive number). Skipping save."
+                    )
+                    return
+
+        threshold_fields = [
+            ("REQUEST_FAILURE_THRESHOLD", "Request failure threshold"),
+            ("REACH_THRESHOLD",           "Reachability failure threshold"),
+        ]
+        for env_key, label in threshold_fields:
+            val = mapping.get(env_key, "")
+            if val:
+                try:
+                    x = float(val)
+                    assert 0 <= x <= 100
+                except (ValueError, AssertionError):
+                    self.write_log(
+                        f"⚠ {label} '{val}' is invalid (must be 0–100 %). Skipping save."
+                    )
+                    return
+        self._write_structured_env(env_path, mapping)
+        load_dotenv(dotenv_path=env_path, override=True)
+
+        if log:
+            self.write_log("✓ Config saved to config.env")
+
+    def _save_tcp_udp_env(self):
+        env_path = os.path.join(BASE_DIR, "tcp_udp.env")
+        _pfx = self._active_page.lower().replace("/", "_").replace(" ", "_")
+        _stages = self._get_stages()
+        _first_stage = _stages[0] if _stages else {}
+        _page_key = self._active_page.upper()
+
+        stop_val = self.get(f"{_pfx}_stop_timeout") or "60"
+        try:
+            assert float(stop_val) > 0
+        except (ValueError, AssertionError):
+            self.write_log(f"⚠ Stop timeout '{stop_val}' is invalid. Skipping save.")
+            return
+
+        existing = {}
+        if os.path.exists(env_path):
+            with open(env_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    k, v = line.split("=", 1)
+                    existing[k.strip()] = v.strip().strip("'\"")
+
+        existing[f"{_page_key}_STAGES"] = json.dumps(_stages)
+        existing[f"{_page_key}_WORKERS"] = self.get(f"{_pfx}_processes") or "-1"
+        existing[f"{_page_key}_STOP_TIMEOUT"] = stop_val
+        existing[f"{_page_key}_TARGET_RPS"] = self.get(f"{_pfx}_target_rps") or "-1"
+
+        _src_ports = self.get("src_ports").strip()
+        _parsed = parse_ports(_src_ports) if _src_ports else None
+
+        if not _src_ports:
+            _parsed = None
+        if _parsed and _src_ports:
+            existing["SCAN_PORT_RANGE_TCP_START"] = str(min(_parsed))
+            existing["SCAN_PORT_RANGE_TCP_END"] = str(max(_parsed))
+            existing["SCAN_PORT_RANGE_UDP_START"] = str(min(_parsed))
+            existing["SCAN_PORT_RANGE_UDP_END"] = str(max(_parsed))
+        else:
+            existing["SCAN_PORT_RANGE_TCP_START"] = existing.get("SCAN_PORT_RANGE_TCP_START", "1")
+            existing["SCAN_PORT_RANGE_TCP_END"] = existing.get("SCAN_PORT_RANGE_TCP_END", "65535")
+            existing["SCAN_PORT_RANGE_UDP_START"] = existing.get("SCAN_PORT_RANGE_UDP_START", "1")
+            existing["SCAN_PORT_RANGE_UDP_END"] = existing.get("SCAN_PORT_RANGE_UDP_END", "65535")
+        existing["PROTOCOL"] = self._active_page.upper()
+        existing["IPADDR"] = self.get("target")
+        existing["WORKERS"] = self.get(f"{_pfx}_processes") or "-1"
+        existing["PACKET_SIZE"] = str(_first_stage.get("packet_size", 60))
+        existing["TIME_TOTAL"] = str(sum(int(str(s.get("duration", 0))) for s in _stages))
+        existing["SPAWN_RATE"] = str(_first_stage.get("spawn_rate", 1))
+        existing["SCAN_PORT_RANGE_TCP_START"] = str(min(_parsed, default=1)) if _parsed else existing.get(
+            "SCAN_PORT_RANGE_TCP_START", "1")
+        existing["SCAN_PORT_RANGE_TCP_END"] = str(max(_parsed, default=65535)) if _parsed else existing.get(
+            "SCAN_PORT_RANGE_TCP_END", "65535")
+        existing["SCAN_PORT_RANGE_UDP_START"] = str(min(_parsed, default=1)) if _parsed else existing.get(
+            "SCAN_PORT_RANGE_UDP_START", "1")
+        existing["SCAN_PORT_RANGE_UDP_END"] = str(max(_parsed, default=65535)) if _parsed else existing.get(
+            "SCAN_PORT_RANGE_UDP_END", "65535")
+        existing["SOURCE_IP_MINIMAL"] = self.entries.get("ip_start") and self.entries["ip_start"].get().strip() or ""
+        existing["SOURCE_IP_MAXIMAL"] = self.entries.get("ip_end") and self.entries["ip_end"].get().strip() or ""
+        existing["UNIQUE_USERS_COUNT"] = str(_first_stage.get("users", 1))
+        existing["POLL_INTERVAL"] = self.get("reach_interval") or "1"
+        existing["INTERVAL"] = self.get("reach_interval") or "1"
+
+        sections = [
+            ("TCP STAGES", ["TCP_STAGES"]),
+            ("UDP STAGES", ["UDP_STAGES"]),
+            ("TCP PARAMETERS", ["TCP_WORKERS", "TCP_STOP_TIMEOUT", "TCP_TARGET_RPS"]),
+            ("UDP PARAMETERS", ["UDP_WORKERS", "UDP_STOP_TIMEOUT", "UDP_TARGET_RPS"]),
+            ("SHARED TCP/UDP", [
+                "PROTOCOL", "IPADDR", "WORKERS", "PACKET_SIZE", "TIME_TOTAL", "SPAWN_RATE",
+                "SCAN_PORT_RANGE_TCP_START", "SCAN_PORT_RANGE_TCP_END",
+                "SCAN_PORT_RANGE_UDP_START", "SCAN_PORT_RANGE_UDP_END",
+                "SOURCE_IP_MINIMAL", "SOURCE_IP_MAXIMAL", "UNIQUE_USERS_COUNT",
+                "POLL_INTERVAL", "INTERVAL",
+            ]),
+        ]
+
+        lines = [
+            "# ============================================================",
+            "#  Locust DP GUI - TCP/UDP Configuration",
+            "# ============================================================",
+            "# This file is generated by the GUI.",
+            "# Keep the filename lowercase: tcp_udp.env",
+            "# ============================================================",
+            "",
+        ]
+
+        written = set()
+        for title, keys in sections:
+            lines += [
+                "",
+                "# ============================================================",
+                f"#  {title}",
+                "# ============================================================",
+                "",
+            ]
+            for key in keys:
+                val = str(existing.get(key, "")).replace("\\", "\\\\").replace("'", "\\'")
+                lines.append(f"{key}='{val}'")
+                written.add(key)
+
+        with open(env_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines).strip() + "\n")
+
+        load_dotenv(dotenv_path=env_path, override=True)
+
+    def _get_target_rps_value(self):
+        """Return TARGET_RPS only for protocol pages that actually define it."""
+        page = str(getattr(self, "_active_page", ""))
+        if page == "TCP":
+            return self.get("tcp_target_rps") or "0"
+        if page == "UDP":
+            return self.get("udp_target_rps") or "0"
+        return ""
+
+    def _env_quote(self, value):
+        """Quote values safely for python-dotenv compatible .env files."""
+        if value is None:
+            value = ""
+        value = str(value)
+        value = value.replace("\\", "\\\\").replace("'", "\\'")
+        return f"'{value}'"
+
+
+    def _read_existing_env(self, env_path):
+        """Read existing .env values so legacy/experimental keys are not lost."""
+        values = {}
+        if not os.path.exists(env_path):
+            return values
+
+        try:
+            with open(env_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    raw = line.strip()
+                    if not raw or raw.startswith("#") or "=" not in raw:
+                        continue
+                    key, value = raw.split("=", 1)
+                    key = key.strip()
+                    value = value.strip()
+                    if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+                        value = value[1:-1]
+                    values[key] = value
+        except OSError:
+            return {}
+
+        return values
+
+    def _write_structured_env(self, env_path, mapping):
+        """Write config.env in stable sections instead of appending keys randomly.
+
+        python-dotenv's set_key() preserves existing comments, but if the file is
+        already messy or missing sections it keeps the mess. This writer always
+        regenerates the file in a predictable order so the GUI-created config is
+        readable after every save.
+        """
+        existing_mapping = self._read_existing_env(env_path)
+        full_mapping = dict(existing_mapping)
+        full_mapping.update(mapping)
+        mapping = full_mapping
+
+        sections = [
+            (
+                "TEST STAGES",
+                [
+                    "STAGES",
+                ],
+                [
+                    "STAGES - JSON list of test stages used by the GUI.",
+                ],
+            ),
+            (
+                "TARGET",
+                [
+                    "TARGET_HOST",
+                    "ENDPOINT_PATH",
+                    "INTERFACE",
+                    "TEST_TYPE",
+                ],
+                [
+                    "TARGET_HOST   - target URL or host.",
+                    "ENDPOINT_PATH - HTTP path used by the HTTP/S Locustfile.",
+                    "INTERFACE     - network interface used by IP/reachability tools.",
+                    "TEST_TYPE     - selected test mode from the GUI.",
+                ],
+            ),
+            (
+                "IP POOL - IPv4",
+                [
+                    "IP_VERSION",
+                    "IP_START",
+                    "IP_END",
+                    "IPV4PREFIX",
+                ],
+                [
+                    "IP_VERSION - ipv4 or ipv6.",
+                    "IP_START   - first IPv4 address in the generated pool.",
+                    "IP_END     - last IPv4 address in the generated pool.",
+                    "IPV4PREFIX - prefix length written to ip_pool.txt.",
+                ],
+            ),
+            (
+                "IP POOL - IPv6",
+                [
+                    "IP6_START",
+                    "IP6_END",
+                    "IP6_PREFIX",
+                    "IPV6_MODE",
+                    "IPV6RPREFIX",
+                ],
+                [
+                    "IP6_START   - first IPv6 address for range mode.",
+                    "IP6_END     - last IPv6 address for range mode.",
+                    "IP6_PREFIX  - IPv6 network prefix.",
+                    "IPV6_MODE   - range or prefix based generation.",
+                    "IPV6RPREFIX - prefix length written to ip_pool.txt.",
+                ],
+            ),
+            (
+                "HTTP/S TEST",
+                [
+                    "PROCESSES",
+                    "HTTP_METHOD",
+                    "REQUEST_BODY",
+                    "STOP_TIMEOUT",
+                    "CONNECT_TIMEOUT",
+                    "READ_TIMEOUT",
+                    "SSL_VERIFY",
+                    "ACCEPT_ENCODING",
+                    "TARGET_RPS",
+                ],
+                [
+                    "PROCESSES       - Locust worker process count (-1 = automatic).",
+                    "HTTP_METHOD     - GET, POST, PUT, DELETE, ...",
+                    "REQUEST_BODY    - body sent with HTTP methods that support payloads.",
+                    "STOP_TIMEOUT    - graceful Locust stop timeout.",
+                    "CONNECT_TIMEOUT - connection timeout for HTTP/S requests.",
+                    "READ_TIMEOUT    - read timeout for HTTP/S responses.",
+                    "SSL_VERIFY      - true/false certificate validation.",
+                    "ACCEPT_ENCODING - identity disables compression.",
+                    "TARGET_RPS      - optional RPS limit used by TCP/UDP pages; empty for HTTP/S.",
+                ],
+            ),
+            (
+                "TCP/UDP EXPERIMENTAL TESTS",
+                [
+                    "PROTOCOL",
+                    "IPADDR",
+                    "WORKERS",
+                    "PACKET_SIZE",
+                    "TIME_TOTAL",
+                    "SPAWN_RATE",
+                    "SCAN_PORT_RANGE_TCP_START",
+                    "SCAN_PORT_RANGE_TCP_END",
+                    "SCAN_PORT_RANGE_UDP_START",
+                    "SCAN_PORT_RANGE_UDP_END",
+                    "SOURCE_IP_MINIMAL",
+                    "SOURCE_IP_MAXIMAL",
+                    "UNIQUE_USERS_COUNT",
+                    "POLL_INTERVAL",
+                    "INTERVAL",
+                ],
+                [
+                    "These values are kept for the merged TCP/UDP prototype part.",
+                    "HTTP/S testing does not depend on this section.",
+                ],
+            ),
+            (
+                "REACHABILITY",
+                [
+                    "REACH_INTERVAL",
+                    "REACH_TIMEOUT",
+                    "REACH_SRC_IP",
+                    "REACH_INTERFACE",
+                ],
+                [
+                    "REACH_INTERVAL  - interval between reachability checks.",
+                    "REACH_TIMEOUT   - timeout for one reachability check.",
+                    "REACH_SRC_IP    - source IP used by reachability checks.",
+                    "REACH_INTERFACE - interface used by reachability checks.",
+                ],
+            ),
+            (
+                "REPORT THRESHOLDS",
+                [
+                    "REQUEST_FAILURE_THRESHOLD",
+                    "REACH_THRESHOLD",
+                ],
+                [
+                    "REQUEST_FAILURE_THRESHOLD - failure threshold in percent.",
+                    "REACH_THRESHOLD           - reachability threshold in percent.",
+                ],
+            ),
+        ]
+
+        lines = [
+            "# ============================================================",
+            "#  Locust DP GUI - Configuration file",
+            "# ============================================================",
+            "# This file is generated by the GUI.",
+            "# Values can be overwritten after saving settings in the application.",
+            "# Keep the filename lowercase: config.env",
+            "# ============================================================",
+            "",
+        ]
+
+        written = set()
+        for title, keys, description in sections:
+            lines.extend([
+                "",
+                "# ============================================================",
+                f"#  {title}",
+                "# ============================================================",
+            ])
+            for comment in description:
+                lines.append(f"# {comment}")
+            lines.append("")
+
+            for key in keys:
+                lines.append(f"{key}={self._env_quote(mapping.get(key, ''))}")
+                written.add(key)
+
+        extra_keys = [key for key in mapping if key not in written]
+        if extra_keys:
+            lines.extend([
+                "",
+                "# ============================================================",
+                "#  OTHER",
+                "# ============================================================",
+                "",
+            ])
+            for key in extra_keys:
+                lines.append(f"{key}={self._env_quote(mapping.get(key, ''))}")
+
+        with open(env_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines).strip() + "\n")
+
+    # ================================================================
+    # ZOOM
+    # ================================================================
+
+    def _zoom_in(self, event=None):
+        if self._zoom < ZOOM_MAX:
+            self._zoom = round(self._zoom + ZOOM_STEP, 1)
+            self._apply_zoom()
+        return "break"
+
+    def _zoom_out(self, event=None):
+        if self._zoom > ZOOM_MIN:
+            self._zoom = round(self._zoom - ZOOM_STEP, 1)
+            self._apply_zoom()
+        return "break"
+
+    def _zoom_reset(self, event=None):
+        self._zoom = 1.0
+        self._apply_zoom()
+        return "break"
+
+    def _apply_zoom(self):
+        w = self.winfo_width()
+        h = self.winfo_height()
+        self.focus_set()
+        ctk.set_widget_scaling(self._zoom)
+        self.geometry(f"{w}x{h}")
+        self.write_log(f"🔍 Zoom: {int(self._zoom * 100)}%")
+
+    # ================================================================
+    # SCROLL
+    # ================================================================
+
+    def _bind_scroll(self):
+        self.bind_all("<MouseWheel>", self._on_mousewheel)
+        self.bind_all("<Button-4>",   self._on_mousewheel)
+        self.bind_all("<Button-5>",   self._on_mousewheel)
+
+    def _on_mousewheel(self, event):
+        if isinstance(event.widget, tk.Text):
+            return
+        widget = event.widget
+        while widget:
+            if isinstance(widget, ctk.CTkScrollableFrame):
+                top, bottom = widget._parent_canvas.yview()
+                if top == 0.0 and bottom == 1.0:
+                    return "break"
+                if event.num == 4:
+                    widget._parent_canvas.yview_scroll(-5, "units")
+                elif event.num == 5:
+                    widget._parent_canvas.yview_scroll(5, "units")
+                else:
+                    units = int(-1 * (event.delta / abs(event.delta)) * 5) if event.delta != 0 else 0
+                    widget._parent_canvas.yview_scroll(units, "units")
+                return "break"
+            try:
+                widget = widget.master
+            except AttributeError:
+                break
+
+    # ================================================================
+    # SIDEBAR
+    # ================================================================
+
+    def _build_sidebar(self):
+        sidebar = ctk.CTkFrame(self, width=200, corner_radius=0, fg_color=C_SIDEBAR)
+        sidebar.grid(row=0, column=0, sticky="nsew")
+        sidebar.grid_propagate(False)
+
+        ctk.CTkLabel(
+            sidebar, text="🦗 Locust",
+            font=ctk.CTkFont(size=20, weight="bold"),
+            text_color=C_HEADER
+        ).grid(row=0, column=0, padx=20, pady=(24, 4), sticky="w")
+
+        ctk.CTkLabel(
+            sidebar, text="Load Test GUI",
+            font=ctk.CTkFont(size=11),
+            text_color=C_MUTED
+        ).grid(row=1, column=0, padx=20, pady=(0, 24), sticky="w")
+
+        ctk.CTkFrame(sidebar, height=1, fg_color="#2a3a5e"
+                     ).grid(row=2, column=0, padx=12, pady=(0, 12), sticky="ew")
+
+        for i, (icon, label) in enumerate(self.NAV_ITEMS):
+            btn = ctk.CTkButton(
+                sidebar,
+                text=f"  {icon}  {label}",
+                anchor="w",
+                fg_color="transparent",
+                hover_color=C_HOVER,
+                text_color=C_TEXT,
+                font=ctk.CTkFont(size=13),
+                corner_radius=8,
+                height=42,
+                command=lambda l=label: self._show_page(l)
+            )
+            btn.grid(row=3+i, column=0, padx=10, pady=3, sticky="ew")
+            self._nav_buttons[label] = btn
+
+        # Empty expandable row below the navigation menu.
+        # Row 8 contains the "Reports" button, therefore the spacer must be row 9.
+        sidebar.grid_rowconfigure(9, weight=1)
+
+        ctk.CTkFrame(
+            sidebar,
+            height=1,
+            fg_color="#2a3a5e"
+        ).grid(row=10, column=0, padx=12, pady=12, sticky="ew")
+
+        ctk.CTkLabel(
+            sidebar,
+            text="THEME",
+            font=ctk.CTkFont(size=10, weight="bold"),
+            text_color=C_MUTED
+        ).grid(row=11, column=0, padx=20, pady=(4, 2), sticky="w")
+
+        self._theme_combo = ctk.CTkComboBox(
+            sidebar,
+            values=list(THEMES.keys()),
+            width=170,
+            fg_color=darken(C_SIDEBAR),
+            button_color=C_ACTIVE,
+            button_hover_color=C_HOVER,
+            dropdown_fg_color=C_SIDEBAR,
+            dropdown_text_color=C_TEXT,
+            command=self._change_theme
+        )
+        self._theme_combo.set(self._current_theme)
+        self._theme_combo.grid(row=12, column=0, padx=(15, 0), pady=(0, 8), sticky="w")
+
+        ctk.CTkLabel(
+            sidebar,
+            text="v0.1  •  2026",
+            font=ctk.CTkFont(size=10),
+            text_color=C_MUTED
+        ).grid(row=13, column=0, padx=20, pady=(0, 16), sticky="w")
+
+    # ================================================================
+    # MAIN CONTENT AREA
+    # ================================================================
+
+    def _validate_fields(self):
+        pfx = self._active_page.lower()
+        p = self._pages.get(self._active_page)
+
+        if p is None:
+            return True
+
+        for i, row in enumerate(p.get("stage_rows", []), start=1):
+            for field, label in {"duration": "Duration", "users": "Users",
+                                 "spawn_rate": "Spawn rate", "packet_size": "Packet size"}.items():
+                entry = row.get(field)
+                if not entry:
+                    continue
+                val = entry.get().strip()
+                try:
+                    num = float(val)
+                    if num <= 0:
+                        self.write_log(f"✗ Stage {i} — {label} '{val}' must be greater than 0.")
+                        return False
+                except ValueError:
+                    self.write_log(f"✗ Stage {i} — {label} '{val}' is not a valid number.")
+                    return False
+
+        # Process fields (-1 or positive)
+        for key in [f"{pfx}_target_rps"]:
+            entry = self.entries.get(key)
+            if not entry:
+                continue
+            val = entry.get().strip()
+            try:
+                num = int(val)
+                if num < -1 or num == 0:
+                    self.write_log(f"✗ Invalid target number '{val}' — must be -1 (auto) or a positive number.")
+                    return False
+            except ValueError:
+                self.write_log(f"✗ Invalid process count '{val}' — must be a number.")
+                return False
+
+        cpu_count = multiprocessing.cpu_count()
+        for key in ["processes", f"{pfx}_processes"]:
+            entry = self.entries.get(key)
+            if not entry:
+                continue
+            val = entry.get().strip()
+            try:
+                num = int(val)
+                if num < -1 or num == 0:
+                    self.write_log(f"✗ Invalid process count '{val}' — must be -1 (auto) or a positive number.")
+                    return False
+                elif num > cpu_count:
+                    self.write_log(f"✗ Process count '{val}' exceeds CPU core count ({cpu_count}). Use -1 for auto.")
+                    return False
+            except ValueError:
+                self.write_log(f"✗ Invalid process count '{val}' — must be a number.")
+                return False
+
+        # Positive-only fields
+        positive_fields = {
+            f"{pfx}_users": "Users",
+            f"{pfx}_spawn_rate": "Spawn rate",
+            f"{pfx}_run_time": "Duration",
+            f"{pfx}_packet_size": "Packet size",
+            f"{pfx}_stop_timeout": "Stop timeout",
+            "reach_interval": "Reachability interval",
+            "reach_timeout": "Reachability timeout",
+        }
+        percentage_fields = {
+            "reach_threshold": "Reachability failure threshold",
+            "request_threshold": "Request failure threshold",
+        }
+        for key, label in percentage_fields.items():
+            entry = self.entries.get(key)
+            if not entry:
+                continue
+            val = entry.get().strip()
+            try:
+                num = float(val)
+                if num < 0 or num > 100:
+                    self.write_log(f"✗ Invalid {label} '{val}' — must be between 0 and 100.")
+                    return False
+            except ValueError:
+                self.write_log(f"✗ Invalid {label} '{val}' — must be a number.")
+                return False
+
+        for key, label in positive_fields.items():
+            entry = self.entries.get(key)
+            if not entry:
+                continue
+            val = entry.get().strip()
+            try:
+                num = float(val)
+                if num <= 0:
+                    self.write_log(f"✗ Invalid {label} '{val}' — must be greater than 0.")
+                    return False
+            except ValueError:
+                self.write_log(f"✗ Invalid {label} '{val}' — must be a number.")
+                return False
+
+        return True
+
+    def _build_main(self):
+        self.main = ctk.CTkFrame(self._paned, corner_radius=0, fg_color=C_CONTENT)
+        self._paned.add(self.main,      minsize=300, stretch="always")
+        self._paned.add(self._logframe, minsize=80,  stretch="never")
+
+        self.main.grid_columnconfigure(0, weight=1)
+        self.main.grid_rowconfigure(2, weight=1)
+
+        self.page_title = ctk.CTkLabel(
+            self.main, text="",
+            font=ctk.CTkFont(size=24, weight="bold"),
+            text_color=C_TEXT, anchor="w"
+        )
+        self.page_title.grid(row=0, column=0, padx=24, pady=(18, 8), sticky="ew")
+
+        ctk.CTkFrame(self.main, height=1, fg_color="#2a3a5e"
+                     ).grid(row=1, column=0, padx=0, pady=0, sticky="ew")
+
+        self.page_container = ctk.CTkFrame(self.main, fg_color="transparent", corner_radius=0)
+        self.page_container.grid(row=2, column=0, sticky="nsew", padx=0, pady=0)
+        self.page_container.grid_columnconfigure(0, weight=1)
+        self.page_container.grid_rowconfigure(0, weight=1)
+
+        self._page_frames["Config"] = self._build_page_config(self.page_container)
+        self._page_frames["HTTP/S"] = self._build_page_http(self.page_container)
+        self._page_frames["TCP"] = self._build_page_tcp(self.page_container)
+        self._page_frames["UDP"] = self._build_page_udp(self.page_container)
+        self._page_frames["Generate Report"] = self._build_page_report(self.page_container)
+        self._page_frames["Reports"] = self._build_page_reports(self.page_container)
+        self._pages["Config"] = {}
+        self._pages["Generate Report"] = {}
+        self._pages["Reports"] = {}
+        self.after(100, self._set_sash_default) # type: ignore
+
+    def _show_page(self, name):
+        if self._active_page and self._active_page in ("TCP", "UDP"):
+            self._save_tcp_udp_env()
+        elif self._active_page == "HTTP/S":
+            self._save_env_from_gui(log=False)
+        for label, btn in self._nav_buttons.items():
+            if label == name:
+                btn.configure(fg_color=C_ACTIVE, text_color="white",
+                               font=ctk.CTkFont(size=13, weight="bold"))
+            else:
+                btn.configure(fg_color="transparent", text_color=C_TEXT,
+                               font=ctk.CTkFont(size=13, weight="normal"))
+        for label, frame in self._page_frames.items():
+            if label == name:
+                frame.grid()
+            else:
+                frame.grid_remove()
+        icon = next(ic for ic, lb in self.NAV_ITEMS if lb == name)
+        self.page_title.configure(text=f"{icon}  {name}")
+        self._active_page = name
+        if name in ("TCP", "UDP"):
+            self._load_tcp_udp_env()
+    def _set_sash_default(self):
+        total = self._paned.winfo_height()
+        self._paned.sash_place(0, 0, total - 200)
+
+    # ================================================================
+    # PAGE – CONFIG
+    # ================================================================
+
+    def _build_page_config(self, parent):
+        outer = ctk.CTkFrame(parent, fg_color="transparent", corner_radius=0)
+        outer.grid(row=0, column=0, sticky="nsew")
+        outer.grid_columnconfigure(0, weight=1)
+        outer.grid_rowconfigure(0, weight=1)
+        outer.grid_rowconfigure(1, weight=0)
+
+        scroll = make_scroll_frame(outer)
+        scroll.grid(row=0, column=0, sticky="nsew")
+        scroll.grid_columnconfigure(0, weight=1)
+
+        row = 0
+
+        row = self._card_header(scroll, "General", row)
+        card = self._card(scroll, row); row += 1
+        self._field_row(card, 0, "Target host",  "target",    "https://google.sk",
+                        help="Full URL or IP address of the server under test.\nExample: https://192.168.1.1 or http://myapp.local:8080")
+        self._field_row(card, 1,"Endpoint path","endpoint_path","/",
+        help="Endpoint path or multiple comma-separated paths.\n"
+             "Examples: /, /api/users, /health\n"
+             "For multiple endpoints use: /,/api/users,/health"
+        )
+        ifaces = get_network_interfaces()
+        self._combo_row(card, 2, "Interface", "interface", ifaces,
+                os.getenv("INTERFACE", ifaces[0] if ifaces else "ens33"),
+                help="Network interface used to send outgoing requests.\nMust match the interface where the IP pool will be assigned.")
+        self._field_row(card, 0, "Test type",    "test_type", "Load Test", col=2,
+                        help="Label describing the test scenario.\nAppears in the generated PDF report header.")
+        self._field_row(card, 1, "Port range", "src_ports", "", col=2,
+                        ph="e.g. 1024-65535",
+                        help="HTTP: Source port range for outgoing connections.\n"
+                             "TCP/UDP: Target port range to scan for open ports.\n"
+                             "Formats: single (8080), range (1024-65535), list (8080,8081,8082).\n"
+                             "Leave empty for defaults.")
+        self._field_row(card, 2, "Request failure threshold (%)", "request_threshold", "1", col=2,
+                        help="Maximum allowed percentage of failed Locust HTTP requests.\nExample: 1 means the load test is considered unstable if more than 1% of requests fail.")
+
+        # SSL checkbox
+        self._ssl_verify_var = ctk.BooleanVar(value=os.getenv("SSL_VERIFY", "true").lower() != "false")
+        ssl_cb = ctk.CTkCheckBox(
+            card,
+            text="Verify SSL certificate",
+            variable=self._ssl_verify_var,
+            font=ctk.CTkFont(size=13),
+            text_color=C_TEXT,
+            fg_color=C_ACTIVE,
+            hover_color=C_HOVER,
+            border_color=C_MUTED,
+        )
+        ssl_cb.grid(row=3, column=0, columnspan=2, padx=(16, 8), pady=(0, 12), sticky="w")
+        CTkToolTip(ssl_cb,
+                   message="When disabled, HTTPS requests do not verify the server certificate.\nUseful for testing self-signed certificates",
+                   delay=0.3, x_offset=10, y_offset=-10)
+
+        # ── IP Pool ───────────────────────────────────────────────
+        row = self._card_header(scroll, "IP Pool", row)
+        card2 = self._card(scroll, row); row += 1
+
+        self.ip_tab = ctk.CTkTabview(card2, height=110, fg_color=C_CARD,
+                                     segmented_button_fg_color=darken(C_CARD),
+                                     segmented_button_selected_color=C_ACTIVE)
+        self.ip_tab.grid(row=0, column=0, columnspan=4, padx=12, pady=8, sticky="ew")
+        self.ip_tab.add("IPv4")
+        self.ip_tab.add("IPv6")
+
+        # ── IPv4 tab ──────────────────────────────────────────────
+        v4 = self.ip_tab.tab("IPv4")
+        v4.grid_columnconfigure(0, minsize=self.LBL_W)
+        v4.grid_columnconfigure(1, weight=1)
+        for i, (lbl, key, default) in enumerate([
+            ("IP range start", "ip_start", "192.168.10.10"),
+            ("IP range end",   "ip_end",   "192.168.10.40"),
+        ]):
+            ctk.CTkLabel(v4, text=lbl, font=ctk.CTkFont(size=12),
+                         text_color=C_LABEL, anchor="w", width=self.LBL_W
+                         ).grid(row=i, column=0, padx=(16, 8), pady=6, sticky="w")
+            e = ctk.CTkEntry(v4, fg_color=C_ENTRY)
+            e.insert(0, default)
+            e.grid(row=i, column=1, padx=(0, 16), pady=6, sticky="ew")
+            self.entries[key] = e
+
+        ctk.CTkLabel(v4, text="Prefix /", font=ctk.CTkFont(size=12),
+                     text_color=C_LABEL, anchor="w", width=self.LBL_W
+                     ).grid(row=2, column=0, padx=(16, 8), pady=6, sticky="w")
+        cb_v4_prefix = ctk.CTkComboBox(
+            v4, values=["32","31","30","29","28","27","26","25","24","16","8"],
+            width=self.ENTR_W, fg_color=C_ENTRY,
+            button_color=C_ACTIVE, button_hover_color=C_HOVER,
+            dropdown_fg_color=C_CARD, dropdown_text_color=C_TEXT
+        )
+        cb_v4_prefix.set("32")
+        cb_v4_prefix.grid(row=2, column=1, padx=(0, 16), pady=6, sticky="ew")
+        self.entries["ipv4prefix"] = cb_v4_prefix
+
+        # ── IPv6 tab ──────────────────────────────────────────────
+        v6 = self.ip_tab.tab("IPv6")
+        v6.grid_columnconfigure(1, weight=1)
+        v6.grid_columnconfigure(3, weight=1)
+        self.ipv6_mode = ctk.StringVar(value="range")
+        mf = ctk.CTkFrame(v6, fg_color="transparent")
+        mf.grid(row=0, column=0, columnspan=4, sticky="w", padx=8, pady=(4, 2))
+        ctk.CTkLabel(mf, text="Mode:", font=ctk.CTkFont(size=11),
+                     text_color=C_MUTED).pack(side="left", padx=(0, 8))
+        for val, txt in [("range", "Range"), ("prefix", "Prefix")]:
+            ctk.CTkRadioButton(mf, text=txt, variable=self.ipv6_mode, value=val,
+                               command=self._on_ipv6_mode_change,
+                               font=ctk.CTkFont(size=11),
+                               fg_color=C_ACTIVE, hover_color=C_HOVER,
+                               border_color=C_MUTED
+                               ).pack(side="left", padx=4)
+
+        self.ipv6_range_frame = ctk.CTkFrame(v6, fg_color="transparent")
+        self.ipv6_range_frame.grid(row=1, column=0, columnspan=4, sticky="ew")
+        self.ipv6_range_frame.grid_columnconfigure(0, minsize=self.LBL_W)
+        self.ipv6_range_frame.grid_columnconfigure(1, weight=1)
+        for i, (lbl, key, dflt) in enumerate([("IPv6 start", "ip6_start", "fd00::10"),
+                                               ("IPv6 end",   "ip6_end",   "fd00::40")]):
+            ctk.CTkLabel(self.ipv6_range_frame, text=lbl, font=ctk.CTkFont(size=11),
+                         text_color=C_LABEL, anchor="w", width=self.LBL_W
+                         ).grid(row=i, column=0, padx=(16, 8), pady=4, sticky="w")
+            e = ctk.CTkEntry(self.ipv6_range_frame, fg_color=C_ENTRY)
+            e.insert(0, dflt)
+            e.grid(row=i, column=1, padx=(0, 16), pady=4, sticky="ew")
+            self.entries[key] = e
+
+        ctk.CTkLabel(self.ipv6_range_frame, text="Prefix /",
+                     font=ctk.CTkFont(size=11), text_color=C_LABEL,
+                     anchor="w", width=self.LBL_W
+                     ).grid(row=2, column=0, padx=(16, 8), pady=4, sticky="w")
+        cb_v6_prefix = ctk.CTkComboBox(
+            self.ipv6_range_frame,
+            values=["128","127","126","120","112","96","64"],
+            width=self.ENTR_W, fg_color=C_ENTRY,
+            button_color=C_ACTIVE, button_hover_color=C_HOVER,
+            dropdown_fg_color=C_CARD, dropdown_text_color=C_TEXT
+        )
+        cb_v6_prefix.set("128")
+        cb_v6_prefix.grid(row=2, column=1, padx=(0, 16), pady=4, sticky="ew")
+        self.entries["ipv6rangeprefix"] = cb_v6_prefix
+
+        self.ipv6_prefix_frame = ctk.CTkFrame(v6, fg_color="transparent")
+        self.ipv6_prefix_frame.grid(row=1, column=0, columnspan=4, sticky="ew")
+        self.ipv6_prefix_frame.grid_columnconfigure(1, weight=1)
+
+        lbl_ipv6_prefix = ctk.CTkLabel(
+            self.ipv6_prefix_frame,
+            text="IPv6 prefix ⓘ",
+            font=ctk.CTkFont(size=11),
+            text_color=C_LABEL,
+            anchor="w",
+            cursor="question_arrow"
+        )
+        lbl_ipv6_prefix.grid(row=0, column=0, padx=(16, 8), pady=4, sticky="w")
+
+        CTkToolTip(
+            lbl_ipv6_prefix,
+            message=(
+                "Prefix mode generates IPv6 addresses in blocks of max. 256 addresses.\n"
+                "If the current block already exists in ip_pool.txt, the next unused\n"
+                "block of 256 addresses from the same prefix will be generated.\n"
+                "The target/server IP address is skipped automatically to avoid IP conflicts.\n\n"
+                "Example: fd00:100::/64\n"
+                "1st setup: first 256 unused addresses\n"
+                "2nd setup: next 256 unused addresses"
+            ),
+            delay=0.3,
+            x_offset=10,
+            y_offset=-10
+        )
+
+        e = ctk.CTkEntry(
+            self.ipv6_prefix_frame,
+            width=self.ENTR_W,
+            fg_color=C_ENTRY
+        )
+        e.insert(0, "fd00::/64")
+        e.grid(row=0, column=1, padx=(0, 12), pady=4, sticky="ew")
+
+        self.entries["ip6_prefix"] = e
+        self.ipv6_prefix_frame.grid_remove()
+
+        # ── Custom IP Pool File ───────────────────────────────────
+        custom_pool_frame = ctk.CTkFrame(card2, fg_color="transparent")
+        custom_pool_frame.grid(row=1, column=0, columnspan=4, padx=12, pady=(0, 8), sticky="ew")
+        custom_pool_frame.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            custom_pool_frame, text="Custom pool file",
+            font=ctk.CTkFont(size=12), text_color=C_LABEL,
+            anchor="w", width=self.LBL_W
+        ).grid(row=0, column=0, padx=(20, 8), pady=4, sticky="w")
+
+        self._custom_pool_entry = ctk.CTkEntry(
+            custom_pool_frame, fg_color=C_ENTRY,
+            placeholder_text="optional – load IPs directly from .txt file"
+        )
+        self._custom_pool_entry.grid(row=0, column=1, padx=(0, 8), pady=4, sticky="ew")
+        CTkToolTip(self._custom_pool_entry,
+                   message="Path to a plain-text file with one IP/prefix per line.\n"
+                           "Format: 192.168.10.10/32 (one entry per line).\n"
+                           "When set, Setup IP Pool will use this file directly\n"
+                           "instead of generating the pool from the IP range above.",
+                   delay=0.3, x_offset=10, y_offset=-10)
+
+        ctk.CTkButton(
+            custom_pool_frame, text="Browse", width=72, height=28,
+            fg_color=C_ENTRY, hover_color=C_HOVER,
+            font=ctk.CTkFont(size=12), corner_radius=6,
+            command=self._browse_custom_pool
+        ).grid(row=0, column=2, padx=(0, 4), pady=4)
+
+        ctk.CTkButton(
+            custom_pool_frame, text="✖", width=32, height=28,
+            fg_color=darken(C_DANGER, 10), hover_color=C_DANGER,
+            font=ctk.CTkFont(size=12), corner_radius=6,
+            command=self._clear_custom_pool
+        ).grid(row=0, column=3, padx=(0, 4), pady=4)
+
+        # ── Reachability ──────────────────────────────────────────
+        row = self._card_header(scroll, "Reachability", row)
+        card3 = self._card(scroll, row); row += 1
+        self._field_row(card3, 0, "Interval (s)",         "reach_interval",  "5",
+                        help="How often (in seconds) a reachability probe is sent to the target\nduring the test. Lower = more precise, higher = less overhead.")
+        self._field_row(card3, 1, "Timeout (s)",           "reach_timeout",   "5",
+                        help="Maximum time to wait for a response to each probe.\nProbes exceeding this limit are counted as failures.")
+        self._field_row(card3, 0, "Source IP",             "reach_src_ip",    "", col=2,
+                        ph="= IP range start",
+                        help="Source IP used for reachability probes.\nLeave empty to use the first IP from the pool.\nUseful when you want probes from a specific address.")
+        self._combo_row(card3, 1, "Interface", "reach_interface", [""] + get_network_interfaces(), "", col=2,
+                        help="Network interface used for reachability probes.\nLeave empty to use the main interface defined above.")
+        self._field_row(card3, 2, "Reachability failure threshold (%)", "reach_threshold", "5", col=0,
+                        help="Maximum allowed percentage of failed reachability probes.\nThis threshold applies only to reachability monitoring, not to Locust request failures.")
+
+        self._setup_positive_field_highlight("reach_interval")
+        self._setup_positive_field_highlight("reach_timeout")
+        self._setup_percentage_field_highlight("reach_threshold")
+        self._setup_percentage_field_highlight("request_threshold")
+        # ── Network Monitor ───────────────────────────────────────
+        row = self._card_header(scroll, "Network Monitor", row)
+        card_mon = self._card(scroll, row); row += 1
+        ifaces = get_network_interfaces()
+        self._combo_row(
+            card_mon, 0, "Interface", "monitor_interface", ifaces,
+            os.getenv("INTERFACE", ifaces[0] if ifaces else "ens33"),
+            help="Interface to monitor for network traffic statistics\n(bytes sent/received, packets) during the test.\nResults are saved to network_usage.csv and shown in the report."
+        )
+
+        # ── Actions ────────────────────────────────
+        bf = ctk.CTkFrame(outer, fg_color=C_CONTENT, height=48)
+        bf.grid(row=1, column=0, sticky="ew", padx=0, pady=0)
+        bf.grid_propagate(False)
+        bf.grid_columnconfigure(0, weight=1)  # spacer vľavo
+
+        ctk.CTkButton(bf, text="⚙ Setup IP Pool", width=150, height=32,
+            fg_color=C_BLUE, hover_color=darken(C_BLUE, 25),
+            font=ctk.CTkFont(size=12), corner_radius=6,
+            command=self.setup_env
+        ).grid(row=0, column=1, padx=4, pady=8)
+
+        ctk.CTkButton(bf, text="💾 Save Pool", width=130, height=32,
+            fg_color=C_PURPLE, hover_color=darken(C_PURPLE, 25),
+            font=ctk.CTkFont(size=12), corner_radius=6,
+            command=self._save_current_pool_to_dir
+        ).grid(row=0, column=2, padx=4, pady=8)
+
+        ctk.CTkButton(bf, text="🗑 Cleanup", width=150, height=32,
+            fg_color=C_DANGER, hover_color=darken(C_DANGER, 25),
+            font=ctk.CTkFont(size=12), corner_radius=6,
+            command=self.cleanup
+        ).grid(row=0, column=3, padx=(4, 16), pady=8)
+
+        return outer
+
+    # ================================================================
+    # PAGE – HTTP
+    # ================================================================
+
+    def _build_page_http(self, parent):
+        outer = ctk.CTkFrame(parent, fg_color="transparent", corner_radius=0)
+        outer.grid(row=0, column=0, sticky="nsew")
+        outer.grid_columnconfigure(0, weight=1)
+        outer.grid_rowconfigure(0, weight=1)
+        outer.grid_rowconfigure(1, weight=0)
+
+        scroll = make_scroll_frame(outer)
+        scroll.grid(row=0, column=0, sticky="nsew")
+        scroll.grid_columnconfigure(0, weight=1)
+
+        s_row = 0
+
+        # ── Define Test ───────────────────────────────────────────
+        s_row = self._card_header(scroll, "Define Test", s_row)
+        card_stages = ctk.CTkFrame(scroll, fg_color=C_CARD, corner_radius=10)
+        card_stages.grid(row=s_row, column=0, padx=16, pady=(0, 4), sticky="ew")
+        card_stages.grid_columnconfigure(0, weight=1)
+        s_row += 1
+
+        preset_frame = ctk.CTkFrame(card_stages, fg_color="transparent")
+        preset_frame.grid(row=0, column=0, padx=12, pady=(10, 4), sticky="w")
+        for name in STAGE_PRESETS:
+            btn = ctk.CTkButton(
+                preset_frame, text=name, width=80, height=26,
+                fg_color=C_ENTRY, hover_color=C_HOVER,
+                font=ctk.CTkFont(size=11), corner_radius=6,
+                command=lambda n=name: self._load_preset(n)
+            )
+            btn.pack(side="left", padx=(0, 6))
+            self._preset_btns[name] = btn
+
+        self._stages_frame = ctk.CTkFrame(card_stages, fg_color="transparent")
+        self._stages_frame.grid(row=1, column=0, padx=12, pady=(2, 0), sticky="ew")
+        self._stages_frame.grid_columnconfigure(0, minsize=180, weight=1)
+        self._stages_frame.grid_columnconfigure(1, minsize=180, weight=1)
+        self._stages_frame.grid_columnconfigure(2, minsize=180, weight=1)
+        self._stages_frame.grid_columnconfigure(3, minsize=130, weight=0)
+        self._stages_frame.grid_columnconfigure(4, minsize=55, weight=0)
+        self._stages_frame.grid_columnconfigure(5, minsize=55, weight=0)
+        self._stages_frame.grid_columnconfigure(6, minsize=30, weight=0)
+        self._hdr_min_lbl = None
+        self._hdr_max_lbl = None
+        for col, (txt, help_txt) in enumerate([
+            ("Duration (s)", "Duration of this stage only.\nExample: 60, 120, 120 means total test time 300 seconds."),
+            ("Users", None),
+            ("Spawn rate", None),
+            ("Wait mode",
+             "between – random wait between Min and Max\nconstant – fixed wait of Min seconds\nconstant_throughput – Min = target RPS per user"),
+            ("Min", "between: minimum wait (s)\nconstant: fixed wait (s)\nconstant_throughput: target RPS"),
+            ("Max", "between: maximum wait (s)\nIgnored in other modes"),
+        ]):
+            lbl = ctk.CTkLabel(
+                self._stages_frame,
+                text=f"{txt.upper()} ⓘ" if help_txt else txt.upper(),
+                font=ctk.CTkFont(size=10, weight="bold"),
+                text_color=C_MUTED, anchor="w",
+                cursor="question_arrow" if help_txt else "arrow"
+            )
+            lbl.grid(row=0, column=col, padx=(0, 4), pady=4, sticky="w")
+            if help_txt:
+                CTkToolTip(lbl, message=help_txt, delay=0.3, x_offset=10, y_offset=-10)
+            if txt == "Min":
+                self._hdr_min_lbl = lbl
+            elif txt == "Max":
+                self._hdr_max_lbl = lbl
+
+        ctk.CTkButton(
+            card_stages, text="+ Add stage", height=28,
+            fg_color="transparent", hover_color=C_HOVER,
+            border_width=1, border_color=C_MUTED,
+            font=ctk.CTkFont(size=11), corner_radius=6,
+            command=self._add_stage_row
+        ).grid(row=3, column=0, padx=12, pady=(6, 4), sticky="ew")
+
+        self._stages_total_lbl = ctk.CTkLabel(
+            card_stages, text="",
+            font=ctk.CTkFont(size=11), text_color=C_MUTED, anchor="w"
+        )
+        self._stages_total_lbl.grid(row=4, column=0, padx=14, pady=(0, 10), sticky="w")
+
+        # ── Locust Parameters ─────────────────────────────────────
+        s_row = self._card_header(scroll, "Locust Parameters", s_row)
+        card = self._card(scroll, s_row)
+        s_row += 1
+        self._field_row(card, 0, "Stop timeout (s)", "stop_timeout", "60", col=0,
+                        help="Time (seconds) Locust waits for running users to finish\ntheir current task after the test ends.\nIncrease for long-running requests.")
+        self._field_row(card, 0, "Processes", "processes", "-1", col=2,
+                        help="Number of worker processes Locust spawns.\n-1 = one process per CPU core (recommended).\n1 = single process (useful for debugging).")
+        self._field_row(card, 1, "Connect timeout (s)", "connect_timeout", "5", col=0,
+                        help="Maximum time (seconds) to establish a TCP connection.\nIncrease for slow or distant servers.")
+        self._field_row(card, 1, "Read timeout (s)", "read_timeout", "15", col=2,
+                        help="Maximum time (seconds) to wait for a server response.\nIncrease for endpoints with slow processing times.")
+
+        # ── Request Settings ───────────────────────────────────────
+        s_row = self._card_header(scroll, "Request Settings", s_row)
+        card_req = self._card(scroll, s_row)
+        s_row += 1
+
+        ctk.CTkLabel(
+            card_req,
+            text="HTTP method",
+            font=ctk.CTkFont(size=15),
+            text_color=C_TEXT,
+            anchor="w",
+            width=self.LBL_W
+        ).grid(row=0, column=0, padx=(16, 8), pady=10, sticky="w")
+
+        self._http_method_combo = ctk.CTkComboBox(
+            card_req,
+            values=["GET", "POST"],
+            width=self.ENTR_W,
+            fg_color=C_ENTRY,
+            button_color=C_ACTIVE,
+            button_hover_color=C_HOVER,
+            dropdown_fg_color=C_CARD,
+            dropdown_text_color=C_TEXT,
+            command=self._on_http_method_change
+        )
+        self._http_method_combo.set(os.getenv("HTTP_METHOD", "GET"))
+        self._http_method_combo.grid(row=0, column=1, padx=(0, 16), pady=10, sticky="ew")
+
+        self.entries["http_method"] = self._http_method_combo
+
+        self._disable_compression_var = tk.BooleanVar(value=os.getenv("ACCEPT_ENCODING", "").strip().lower() == "identity")
+        ctk.CTkCheckBox(
+            card_req,
+            text="Disable compression",
+            variable=self._disable_compression_var,
+            fg_color=C_ACTIVE,
+            hover_color=C_HOVER,
+            text_color=C_TEXT
+        ).grid(row=0, column=2, columnspan=2, padx=(16, 16), pady=10, sticky="w")
+
+        self._request_body_frame = ctk.CTkFrame(card_req, fg_color="transparent")
+        self._request_body_frame.grid(row=1, column=0, columnspan=4, sticky="ew")
+        self._request_body_frame.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            self._request_body_frame,
+            text="Request body JSON",
+            font=ctk.CTkFont(size=15),
+            text_color=C_TEXT,
+            anchor="w",
+            width=self.LBL_W
+        ).grid(row=0, column=0, padx=(16, 8), pady=10, sticky="nw")
+
+        self.request_body_text = ctk.CTkTextbox(
+            self._request_body_frame,
+            height=90,
+            corner_radius=8,
+            font=ctk.CTkFont(size=12, family="Courier New"),
+            fg_color=C_ENTRY,
+            text_color=C_TEXT
+        )
+        self.request_body_text.grid(
+            row=0,
+            column=1,
+            columnspan=3,
+            padx=(0, 16),
+            pady=10,
+            sticky="ew"
+        )
+
+        default_body = os.getenv("REQUEST_BODY", "").strip()
+        if default_body:
+            self.request_body_text.insert("0.0", default_body)
+
+        # Nastaví viditeľnosť Request body podľa aktuálnej HTTP metódy
+        self._on_http_method_change(self._http_method_combo.get())
+
+        # ── Locustfile ────────────────────────────────────────────
+        s_row = self._card_header(scroll, "Locustfile", s_row)
+        card_lf = self._card(scroll, s_row)
+        s_row += 1
+
+        ctk.CTkLabel(
+            card_lf,
+            text="File",
+            font=ctk.CTkFont(size=15),
+            text_color=C_LABEL,
+            anchor="w",
+            width=self.LBL_W
+        ).grid(row=0, column=0, padx=(16, 8), pady=10, sticky="w")
+
+        self._locustfile_label = ctk.CTkLabel(
+            card_lf,
+            text="default: Locustfile_http.py",
+            font=ctk.CTkFont(size=11),
+            text_color=C_MUTED,
+            anchor="w"
+        )
+        self._locustfile_label.grid(row=0, column=1, padx=(0, 8), pady=10, sticky="ew")
+
+        ctk.CTkButton(
+            card_lf,
+            text="Browse",
+            width=80,
+            fg_color=C_ENTRY,
+            hover_color=C_HOVER,
+            font=ctk.CTkFont(size=12),
+            corner_radius=6,
+            command=self._browse_locustfile
+        ).grid(row=0, column=2, padx=(0, 8), pady=10)
+
+        ctk.CTkButton(
+            card_lf,
+            text="✖",
+            width=36,
+            fg_color=darken(C_DANGER, 10),
+            hover_color=C_DANGER,
+            font=ctk.CTkFont(size=12),
+            corner_radius=6,
+            command=self._clear_locustfile
+        ).grid(row=0, column=3, padx=(0, 16), pady=10)
+
+        # ── Actions  ────────────────────────────────
+        bf = ctk.CTkFrame(outer, fg_color=C_CONTENT, height=48)
+        bf.grid(row=1, column=0, sticky="ew", padx=0, pady=0)
+        bf.grid_propagate(False)
+        bf.grid_columnconfigure(0, weight=1)
+
+        self.runbtn = ctk.CTkButton(
+            bf,
+            text="▶ Start Test",
+            width=150,
+            height=32,
+            fg_color=C_SUCCESS,
+            hover_color=darken(C_SUCCESS, 25),
+            font=ctk.CTkFont(size=12),
+            corner_radius=6,
+            command=self.run_test
+        )
+        self.runbtn.grid(row=0, column=1, padx=4, pady=8)
+
+        self.stopbtn = ctk.CTkButton(
+            bf,
+            text="■ Stop",
+            width=150,
+            height=32,
+            fg_color="#3a3a3a",
+            hover_color=C_DANGER,
+            font=ctk.CTkFont(size=12),
+            corner_radius=6,
+            state="disabled",
+            command=self.stop_locust
+        )
+        self.stopbtn.grid(row=0, column=2, padx=(4, 16), pady=8)
+
+        return outer
+    # ================================================================
+    # PAGE – TCP
+    # ================================================================
+    def _build_simple_stages_card(self, scroll, p, s_row, tab):
+        s_row = self._card_header(scroll, "Define Test", s_row)
+        card_stages = ctk.CTkFrame(scroll, fg_color=C_CARD, corner_radius=10)
+        card_stages.grid(row=s_row, column=0, padx=16, pady=(0, 4), sticky="ew")
+        card_stages.grid_columnconfigure(0, weight=1)
+        s_row += 1
+
+        p["stages_frame"] = ctk.CTkFrame(card_stages, fg_color="transparent")
+        p["stages_frame"].grid(row=0, column=0, padx=12, pady=(8, 0), sticky="ew")
+        p["stages_frame"].grid_columnconfigure(0, minsize=150, weight=1)
+        p["stages_frame"].grid_columnconfigure(1, minsize=150, weight=1)
+        p["stages_frame"].grid_columnconfigure(2, minsize=150, weight=1)
+        p["stages_frame"].grid_columnconfigure(3, minsize=150, weight=1)
+        p["stages_frame"].grid_columnconfigure(4, minsize=30, weight=0)
+
+        for col, txt in enumerate(["Duration (s)", "Users", "Spawn rate", "Packet size (bytes)"]):
+            ctk.CTkLabel(
+                p["stages_frame"], text=txt.upper(),
+                font=ctk.CTkFont(size=10, weight="bold"),
+                text_color=C_MUTED, anchor="w"
+            ).grid(row=0, column=col, padx=(0, 4), pady=4, sticky="w")
+
+        p["stage_rows"] = []
+        p["stages"] = [{"duration": 60, "users": 10, "spawn_rate": 1, "packet_size": 60}]
+        p["preset_btn_widgets"] = {}
+
+        ctk.CTkButton(
+            card_stages, text="+ Add stage", height=28,
+            fg_color="transparent", hover_color=C_HOVER,
+            border_width=1, border_color=C_MUTED,
+            font=ctk.CTkFont(size=11), corner_radius=6,
+            command=lambda: self._add_stage_row()
+        ).grid(row=1, column=0, padx=12, pady=(6, 4), sticky="ew")
+
+        p["stages_total_lbl"] = ctk.CTkLabel(
+            card_stages, text="",
+            font=ctk.CTkFont(size=11), text_color=C_MUTED, anchor="w"
+        )
+        p["stages_total_lbl"].grid(row=2, column=0, padx=14, pady=(0, 10), sticky="w")
+
+        self._render_stage_rows_for(p)
+        return s_row
+
+    def _build_page_tcp(self, parent):
+        p = {}
+        self._pages["TCP"] = p
+        outer = ctk.CTkFrame(parent, fg_color="transparent", corner_radius=0)
+        outer.grid(row=0, column=0, sticky="nsew")
+        outer.grid_columnconfigure(0, weight=1)
+        outer.grid_rowconfigure(0, weight=1)
+        outer.grid_rowconfigure(1, weight=0)
+
+        scroll = make_scroll_frame(outer)
+        scroll.grid(row=0, column=0, sticky="nsew")
+        scroll.grid_columnconfigure(0, weight=1)
+
+        s_row = 0
+
+        default_body = os.getenv("REQUEST_BODY", "").strip()
+        if default_body:
+            self.request_body_text.insert("0.0", default_body)
+
+        self._on_http_method_change(self._http_method_combo.get())
+        # ── Define Test ───────────────────────────────────────────
+        s_row = self._build_simple_stages_card(scroll, p, s_row, "TCP")
+
+        # ── Locust Parameters ─────────────────────────────────────
+        s_row = self._card_header(scroll, "Locust Parameters", s_row)
+        card = self._card(scroll, s_row)
+        s_row += 1
+
+        self._field_row(card, 0, "Stop timeout (s)", "tcp_stop_timeout", "60", col=0, help="Time Locust waits for users to finish after test ends.")
+        self._field_row(card, 0, "Processes", "tcp_processes", "-1", col=2, help="Number of worker processes.\n-1 = one per CPU core.")
+        self._field_row(card, 1, "Target RPS", "tcp_target_rps", "-1", col=2,
+                        help="Target requests per second per user.\n-1 = send as fast as possible.\nExample: 10 = each user sends 10 requests/second.")
+        self._setup_process_field_highlight("tcp_processes")
+        self._setup_positive_field_highlight("tcp_stop_timeout")
+        self._setup_target_rps_field_highlight("tcp_target_rps")
+
+        # ── Locustfile ────────────────────────────────────────────
+        s_row = self._card_header(scroll, "Locustfile", s_row)
+        card_lf = self._card(scroll, s_row)
+        s_row += 1
+
+        ctk.CTkLabel(
+            card_lf,
+            text="File",
+            font=ctk.CTkFont(size=15),
+            text_color=C_LABEL,
+            anchor="w",
+            width=self.LBL_W
+        ).grid(row=0, column=0, padx=(16, 8), pady=10, sticky="w")
+
+        p["locustfile_label"] = ctk.CTkLabel(
+            card_lf,
+            text="default: Locust_tcp.py",
+            font=ctk.CTkFont(size=11),
+            text_color=C_MUTED,
+            anchor="w"
+        )
+        p["locustfile_label"].grid(row=0, column=1, padx=(0, 8), pady=10, sticky="ew")
+
+        ctk.CTkButton(
+            card_lf,
+            text="Browse",
+            width=80,
+            fg_color=C_ENTRY,
+            hover_color=C_HOVER,
+            font=ctk.CTkFont(size=12),
+            corner_radius=6,
+            command=self._browse_locustfile
+        ).grid(row=0, column=2, padx=(0, 8), pady=10)
+
+        ctk.CTkButton(
+            card_lf,
+            text="✖",
+            width=36,
+            fg_color=darken(C_DANGER, 10),
+            hover_color=C_DANGER,
+            font=ctk.CTkFont(size=12),
+            corner_radius=6,
+            command=self._clear_locustfile
+        ).grid(row=0, column=3, padx=(0, 16), pady=10)
+
+        # ── Actions  ────────────────────────────────
+        bf = ctk.CTkFrame(outer, fg_color=C_CONTENT, height=48)
+        bf.grid(row=1, column=0, sticky="ew", padx=0, pady=0)
+        bf.grid_propagate(False)
+        bf.grid_columnconfigure(0, weight=1)
+
+        p["runbtn"] = ctk.CTkButton(
+            bf,
+            text="▶ Start Test",
+            width=150,
+            height=32,
+            fg_color=C_SUCCESS,
+            hover_color=darken(C_SUCCESS, 25),
+            font=ctk.CTkFont(size=12),
+            corner_radius=6,
+            command=self.run_test
+        )
+        p["runbtn"].grid(row=0, column=1, padx=4, pady=8)
+
+        p["stopbtn"] = ctk.CTkButton(bf, text="■ Stop", width=150, height=32,
+                                     fg_color="#3a3a3a", hover_color=C_DANGER,
+                                     font=ctk.CTkFont(size=12), corner_radius=6,
+                                     state="disabled", command=self.stop_locust
+                                     )
+        p["stopbtn"].grid(row=0, column=2, padx=(4, 16), pady=8)
+
+        return outer
+    # ================================================================
+    # PAGE – UDP
+    # ================================================================
+    def _build_page_udp(self, parent):
+        p = {}
+        self._pages["UDP"] = p
+        outer = ctk.CTkFrame(parent, fg_color="transparent", corner_radius=0)
+        outer.grid(row=0, column=0, sticky="nsew")
+        outer.grid_columnconfigure(0, weight=1)
+        outer.grid_rowconfigure(0, weight=1)
+        outer.grid_rowconfigure(1, weight=0)
+
+        scroll = make_scroll_frame(outer)
+        scroll.grid(row=0, column=0, sticky="nsew")
+        scroll.grid_columnconfigure(0, weight=1)
+
+        s_row = 0
+
+        # ── Define Test ───────────────────────────────────────────
+        s_row = self._build_simple_stages_card(scroll, p, s_row, "UDP")
+
+        # ── Locust Parameters ─────────────────────────────────────
+        s_row = self._card_header(scroll, "Locust Parameters", s_row)
+        card = self._card(scroll, s_row)
+        s_row += 1
+
+        self._field_row(card, 0, "Stop timeout (s)", "udp_stop_timeout", "60", col=0,
+                        help="Time Locust waits for users to finish after test ends.")
+        self._field_row(card, 0, "Processes", "udp_processes", "-1", col=2,
+                        help="Number of worker processes.\n-1 = one per CPU core.")
+        self._field_row(card, 1, "Target RPS", "udp_target_rps", "-1", col=2,
+                        help="Target requests per second per user.\n-1 = send as fast as possible.\nExample: 10 = each user sends 10 requests/second.")
+        self._setup_process_field_highlight("udp_processes")
+        self._setup_positive_field_highlight("udp_stop_timeout")
+        self._setup_target_rps_field_highlight("udp_target_rps")
+        # ── Locustfile ────────────────────────────────────────────
+        s_row = self._card_header(scroll, "Locustfile", s_row)
+        card_lf = self._card(scroll, s_row)
+        s_row += 1
+
+        ctk.CTkLabel(card_lf, text="File", font=ctk.CTkFont(size=15),
+                     text_color=C_LABEL, anchor="w", width=self.LBL_W
+                     ).grid(row=0, column=0, padx=(16, 8), pady=10, sticky="w")
+        p["locustfile_label"] = ctk.CTkLabel(
+            card_lf, text="default: Locust_udp.py",
+            font=ctk.CTkFont(size=11), text_color=C_MUTED, anchor="w"
+        )
+        p["locustfile_label"].grid(row=0, column=1, padx=(0, 8), pady=10, sticky="ew")
+        ctk.CTkButton(card_lf, text="Browse", width=80,
+                      fg_color=C_ENTRY, hover_color=C_HOVER,
+                      font=ctk.CTkFont(size=12), corner_radius=6,
+                      command=self._browse_locustfile
+                      ).grid(row=0, column=2, padx=(0, 8), pady=10)
+        ctk.CTkButton(card_lf, text="✖", width=36,
+                      fg_color=darken(C_DANGER, 10), hover_color=C_DANGER,
+                      font=ctk.CTkFont(size=12), corner_radius=6,
+                      command=self._clear_locustfile
+                      ).grid(row=0, column=3, padx=(0, 16), pady=10)
+
+        # ── Actions  ────────────────────────────────
+        bf = ctk.CTkFrame(outer, fg_color=C_CONTENT, height=48)
+        bf.grid(row=1, column=0, sticky="ew", padx=0, pady=0)
+        bf.grid_propagate(False)
+        bf.grid_columnconfigure(0, weight=1)
+
+        p["runbtn"] = ctk.CTkButton(bf, text="▶ Start Test", width=150, height=32,
+                                    fg_color=C_SUCCESS, hover_color=darken(C_SUCCESS, 25),
+                                    font=ctk.CTkFont(size=12), corner_radius=6,
+                                    command=self.run_test
+                                    )
+        p["runbtn"].grid(row=0, column=1, padx=4, pady=8)
+
+        p["stopbtn"] = ctk.CTkButton(
+            bf,
+            text="■ Stop",
+            width=150,
+            height=32,
+            fg_color="#3a3a3a",
+            hover_color=C_DANGER,
+            font=ctk.CTkFont(size=12),
+            corner_radius=6,
+            state="disabled",
+            command=self.stop_locust
+        )
+        p["stopbtn"].grid(row=0, column=2, padx=(4, 16), pady=8)
+
+        return outer
+
+    # ── TCP/UDP reader ──────────────────────────────────────────
+    def _collect_run_params(self):
+        active = self._active_page
+        pfx = active.lower().replace("/", "_").replace(" ", "_")
+
+        scan_range = self.entries.get("src_ports")
+        scan_range = scan_range.get().strip() if scan_range else ""
+        parsed = parse_ports(scan_range)
+        range_start = str(min(parsed)) if parsed else "1"
+        range_end = str(max(parsed)) if parsed else "65535"
+
+        process_count = self.entries[f"{pfx}_processes"].get().strip()
+        if process_count == "-1":
+            process_count = str(multiprocessing.cpu_count())
+
+        rps_entry = self.entries.get(f"{pfx}_target_rps")
+        target_rps = rps_entry.get().strip() if rps_entry is not None else None
+
+        return {
+            "host_ip": self.entries["target"].get().strip(),
+            "protocol": pfx,
+            "worker_count": process_count,
+            "range_start": range_start,
+            "range_end": range_end,
+            "ip_pool_file": os.path.join(BASE_DIR, "ip_pool.txt"),
+            "stages": self._get_stages(),
+            "iface": self.entries["interface"].get().strip(),
+            "stop_timeout": self.entries.get(f"{pfx}_stop_timeout", None) and self.entries[
+                f"{pfx}_stop_timeout"].get().strip(),
+            "target_rps": target_rps
+        }
+
+    # ================================================================
+    # STAGE HELPERS
+    # ================================================================
+
+    def _load_preset(self, name):
+        if self._active_page in self._pages and isinstance(self._pages.get(self._active_page), dict):
+            p = self._pages[self._active_page]
+            if "preset_btn_widgets" not in p:
+                return
+            for n, btn in p["preset_btn_widgets"].items():
+                btn.configure(
+                    fg_color=C_ACTIVE if n == name else C_ENTRY,
+                    text_color="white" if n == name else C_TEXT
+                )
+            p["stages"] = [dict(s) for s in STAGE_PRESETS[name]]
+        else:
+            for n, btn in self._preset_btns.items():
+                btn.configure(
+                    fg_color=C_ACTIVE if n == name else C_ENTRY,
+                    text_color="white" if n == name else C_TEXT
+                )
+            self._stages = [dict(s) for s in STAGE_PRESETS[name]]
+        self._render_stage_rows()
+
+    def _add_stage_row(self):
+        if self._active_page in self._pages and isinstance(self._pages.get(self._active_page), dict):
+            p = self._pages[self._active_page]
+            p["stages"] = self._get_stages()
+            last = p["stages"][-1] if p["stages"] else {"duration": 0, "users": 0, "spawn_rate": 2}
+            p["stages"].append({
+                "duration": last["duration"] + 60,
+                "users": last["users"] + 10,
+                "spawn_rate": last["spawn_rate"],
+            })
+            for btn in p["preset_btn_widgets"].values():
+                btn.configure(fg_color=C_ENTRY, text_color=C_TEXT)
+            self._render_stage_rows()
+        else:
+            self._stages = self._get_stages()
+            last = self._stages[-1] if self._stages else {"duration": 0, "users": 0, "spawn_rate": 2}
+            self._stages.append({
+                "duration": last["duration"] + 60,
+                "users": last["users"] + 10,
+                "spawn_rate": last["spawn_rate"],
+            })
+            for btn in self._preset_btns.values():
+                btn.configure(fg_color=C_ENTRY, text_color=C_TEXT)
+            self._render_stage_rows()
+
+    def _del_stage_row(self, idx):
+        if self._active_page in self._pages and isinstance(self._pages.get(self._active_page), dict):
+            p = self._pages[self._active_page]
+            if len(p["stages"]) > 1:
+                p["stages"] = self._get_stages()
+                p["stages"].pop(idx)
+                self._render_stage_rows()
+        else:
+            self._stages = self._get_stages()
+            if len(self._stages) > 1:
+                self._stages.pop(idx)
+                self._render_stage_rows()
+
+    def _render_stage_rows(self):
+        if self._active_page in self._pages and isinstance(self._pages.get(self._active_page), dict):
+            p = self._pages[self._active_page]
+            self._render_stage_rows_for(p)
+        else:
+            p = {
+                "stages": self._stages,
+                "stages_frame": self._stages_frame,
+                "stage_rows": self._stage_rows,
+                "stages_total_lbl": self._stages_total_lbl,
+                "hdr_min_lbl": self._hdr_min_lbl,
+                "hdr_max_lbl": self._hdr_max_lbl,
+                "preset_btn_widgets": self._preset_btns,
+            }
+            self._render_stage_rows_for(p)
+            self._stage_rows = p["stage_rows"]
+
+    def _render_stage_rows_for(self, p, simple_mode=None):
+        if simple_mode is None:
+            simple_mode = self._active_page in ("TCP", "UDP") if self._active_page else "wait_mode" not in (
+                p["stages"][0] if p["stages"] else {})
+        frame = p["stages_frame"]
+        for w in frame.winfo_children():
+            if int(w.grid_info().get("row", 0)) >= 1:
+                w.destroy()
+        p["stage_rows"] = []
+
+        def attach_highlight(entry, validate_fn):
+            var = ctk.StringVar(value=entry.get())
+            entry.configure(textvariable=var)
+
+            def on_change(*_):
+                val = var.get().strip()
+                try:
+                    if not validate_fn(float(val)):
+                        entry.configure(fg_color="#4a1a1a")
+                    else:
+                        entry.configure(fg_color=C_ENTRY)
+                except ValueError:
+                    entry.configure(fg_color="#4a1a1a")
+
+            var.trace_add("write", on_change)
+            entry.after(100, on_change)
+            p.setdefault("_stage_vars", []).append(var)
+
+        for i, stage in enumerate(p["stages"]):
+            row_entries = {}
+
+            for col, key in enumerate(["duration", "users", "spawn_rate"]):
+                e = ctk.CTkEntry(
+                    frame, fg_color=C_ENTRY,
+                    font=ctk.CTkFont(size=12, family="Courier New")
+                )
+                e.insert(0, str(stage[key]))
+                e.grid(row=i+1, column=col, padx=(0, 4), pady=3, sticky="ew")
+                e.bind("<FocusOut>", lambda event: self._update_stage_totals(p))
+                attach_highlight(e, lambda v: v > 0)
+                row_entries[key] = e
+
+            if not simple_mode:
+                cb = ctk.CTkComboBox(
+                    frame,
+                    values=["between", "constant", "constant_throughput"],
+                    width=120, fg_color=C_ENTRY,
+                    button_color=C_ACTIVE, button_hover_color=C_HOVER,
+                    dropdown_fg_color=C_CARD, dropdown_text_color=C_TEXT,
+                    font=ctk.CTkFont(size=11)
+                )
+                cb.set(stage.get("wait_mode", "between"))
+                cb.grid(row=i + 1, column=3, padx=(0, 4), pady=3, sticky="ew")
+                row_entries["wait_mode"] = cb
+
+                e_min = ctk.CTkEntry(frame, width=50, fg_color=C_ENTRY,
+                                     font=ctk.CTkFont(size=12, family="Courier New"))
+                e_min.insert(0, str(stage.get("wait_min", "1")))
+                e_min.grid(row=i + 1, column=4, padx=(0, 4), pady=3, sticky="ew")
+                attach_highlight(e_min, lambda v: v > 0)
+                row_entries["wait_min"] = e_min
+
+                e_max = ctk.CTkEntry(frame, width=50, fg_color=C_ENTRY,
+                                     font=ctk.CTkFont(size=12, family="Courier New"))
+                e_max.insert(0, str(stage.get("wait_max", "3")))
+                e_max.grid(row=i + 1, column=5, padx=(0, 4), pady=3, sticky="ew")
+                attach_highlight(e_max, lambda v: v > 0)
+                row_entries["wait_max"] = e_max
+
+                def _on_wait_mode_change(mode, _row=i + 1, _emin=e_min, _emax=e_max):
+                    if mode == "between":
+                        _emin.grid(row=_row, column=4, columnspan=1,
+                                   padx=(0, 4), pady=3, sticky="ew")
+                        _emax.grid(row=_row, column=5,
+                                   padx=(0, 4), pady=3, sticky="ew")
+                        if p["hdr_min_lbl"]:
+                            p["hdr_min_lbl"].grid(row=0, column=4, columnspan=1,
+                                                  padx=(0, 4), pady=4, sticky="w")
+                            p["hdr_min_lbl"].configure(text="MIN ⓘ")
+                        if p["hdr_max_lbl"]:
+                            p["hdr_max_lbl"].grid(row=0, column=5,
+                                                  padx=(0, 4), pady=4, sticky="w")
+                    else:
+                        _emax.grid_remove()
+                        _emin.grid(row=_row, column=4, columnspan=2,
+                                   padx=(0, 4), pady=3, sticky="ew")
+                        if p["hdr_min_lbl"]:
+                            p["hdr_min_lbl"].grid(row=0, column=4, columnspan=2,
+                                                  padx=(0, 4), pady=4, sticky="w")
+                            p["hdr_min_lbl"].configure(text="MIN ⓘ")
+                        if p["hdr_max_lbl"]:
+                            p["hdr_max_lbl"].grid_remove()
+
+                _on_wait_mode_change(stage.get("wait_mode", "between"))
+                cb.configure(command=_on_wait_mode_change)
+
+                ctk.CTkButton(
+                    frame, text="✕", width=28, height=28,
+                    fg_color="transparent", hover_color=C_DANGER,
+                    font=ctk.CTkFont(size=11), corner_radius=4,
+                    command=lambda idx=i: self._del_stage_row(idx)
+                ).grid(row=i + 1, column=6, padx=(2, 0), pady=3)
+
+            else:
+                e_pkt = ctk.CTkEntry(frame, fg_color=C_ENTRY,
+                                     font=ctk.CTkFont(size=12, family="Courier New"))
+                e_pkt.insert(0, str(stage.get("packet_size", "60")))
+                e_pkt.grid(row=i+1, column=3, padx=(0, 4), pady=3, sticky="ew")
+                attach_highlight(e_pkt, lambda v: v > 0)
+                row_entries["packet_size"] = e_pkt
+
+                ctk.CTkButton(
+                    frame, text="✕", width=28, height=28,
+                    fg_color="transparent", hover_color=C_DANGER,
+                    font=ctk.CTkFont(size=11), corner_radius=4,
+                    command=lambda idx=i: self._del_stage_row(idx)
+                ).grid(row=i+1, column=4, padx=(2, 0), pady=3)
+
+            p["stage_rows"].append(row_entries)
+        self._update_stage_totals(p)
+
+    def _get_stages(self):
+        stages = []
+        if self._active_page in self._pages and isinstance(self._pages.get(self._active_page), dict):
+            p = self._pages[self._active_page]
+            stage_rows = p["stage_rows"]
+        else:
+            stage_rows = self._stage_rows
+
+        simple_mode = self._active_page in ("TCP", "UDP")
+        for i, row in enumerate(stage_rows):
+            try:
+                stage: dict[str, Any] = {
+                    "duration": int(row["duration"].get().strip() or 0),
+                    "users": int(row["users"].get().strip() or 0),
+                    "spawn_rate": int(row["spawn_rate"].get().strip() or 1),
+                }
+                if simple_mode:
+                    stage["packet_size"] = int(row["packet_size"].get().strip() or 60)
+                else:
+                    wait_max_raw = row["wait_max"].get().strip()
+                    wait_min = float(row["wait_min"].get().strip() or 1)
+                    wait_max = float(wait_max_raw) if wait_max_raw else wait_min
+                    stage["wait_mode"] = str(row["wait_mode"].get())
+                    stage["wait_min"] = wait_min
+                    stage["wait_max"] = wait_max
+                stages.append(stage)
+            except (ValueError, KeyError) as e:
+                print(f"[WARN] Stage row {i + 1} skipped: {e}")
+        return stages
+    def _update_stage_totals(self, p=None):
+        if p is None:
+            if self._active_page is None:
+                return
+            if self._active_page in self._pages and isinstance(self._pages.get(self._active_page), dict):
+                p = self._pages[self._active_page]
+            else:
+                p = {
+                    "stage_rows": self._stage_rows,
+                    "stages_total_lbl": self._stages_total_lbl,
+                }
+        if "stage_rows" not in p or "stages_total_lbl" not in p:
+            return
+        try:
+            stages = self._get_stages()
+
+            total_dur = sum(
+                int(stage.get("duration", 0))
+                for stage in stages
+            ) if stages else 0
+
+            max_users = max(
+                int(stage.get("users", 0))
+                for stage in stages
+            ) if stages else 0
+
+            m, s = divmod(total_dur, 60)
+            h, m = divmod(m, 60)
+
+            if h > 0:
+                dur_str = f"{h}h {m}m {s}s"
+            elif m > 0:
+                dur_str = f"{m}m {s}s"
+            else:
+                dur_str = f"{s}s"
+
+            p["stages_total_lbl"].configure(
+                text=f"Total: {dur_str}  •  Max users: {max_users}  •  Stages: {len(stages)}"
+            )
+
+        except Exception as e:
+            p["stages_total_lbl"].configure(
+                text="Total: invalid stage values"
+            )
+    def _save_stages(self):
+        stages = self._get_stages()
+        with open(os.path.join(BASE_DIR, "stages.json"), "w", encoding="utf-8") as f:
+            json.dump(stages, f)
+        self._save_env_from_gui(log=False)
+        self.write_log(f"✓ Stages saved ({len(stages)} stages)")
+        return stages
+
+    # ================================================================
+    # PAGE – REPORT
+    # ================================================================
+
+    def _build_page_report(self, parent):
+        outer = ctk.CTkFrame(parent, fg_color="transparent", corner_radius=0)
+        outer.grid(row=0, column=0, sticky="nsew")
+        outer.grid_columnconfigure(0, weight=1)
+        outer.grid_rowconfigure(0, weight=1)
+        outer.grid_rowconfigure(1, weight=0)
+        outer.grid_rowconfigure(2, weight=0)
+
+        scroll = make_scroll_frame(outer)
+        scroll.grid(row=0, column=0, sticky="nsew")
+        scroll.grid_columnconfigure(0, weight=1)
+
+        t_row = 0
+
+        # ── Comment ─────────────────────────────────────────────
+        t_row = self._card_header(scroll, "Comment", t_row)
+        self.comment_text = ctk.CTkTextbox(
+            scroll, height=140, corner_radius=8,
+            font=ctk.CTkFont(size=12, family="Courier New"),
+            fg_color=C_CARD
+        )
+        self.comment_text.grid(row=t_row, column=0, padx=16, pady=(4, 12), sticky="ew")
+        self.comment_text.insert("0.0", "Write a comment for the report...")
+        t_row += 1
+
+        # ── Output ──────────────────────────────────────────────
+        t_row = self._card_header(scroll, "Output", t_row)
+        card_out = ctk.CTkFrame(scroll, fg_color=C_CARD, corner_radius=10)
+        card_out.grid(row=t_row, column=0, padx=16, pady=(0, 4), sticky="ew")
+        card_out.grid_columnconfigure(1, weight=1)
+        t_row += 1
+
+        ctk.CTkLabel(
+            card_out,
+            text="Report name",
+            font=ctk.CTkFont(size=15),
+            text_color=C_LABEL,
+            anchor="w",
+            width=self.LBL_W
+        ).grid(row=0, column=0, padx=(16, 8), pady=10, sticky="w")
+
+        self._report_name_entry = ctk.CTkEntry(
+            card_out,
+            fg_color=C_ENTRY,
+            placeholder_text="Locust_Report"
+        )
+        self._report_name_entry.insert(0, "Locust_Report")
+        self._report_name_entry.grid(
+            row=0,
+            column=1,
+            columnspan=2,
+            padx=(0, 16),
+            pady=10,
+            sticky="ew"
+        )
+
+        ctk.CTkLabel(
+            card_out,
+            text="Save to",
+            font=ctk.CTkFont(size=15),
+            text_color=C_LABEL,
+            anchor="w",
+            width=self.LBL_W
+        ).grid(row=1, column=0, padx=(16, 8), pady=10, sticky="w")
+
+        self._report_dir_entry = ctk.CTkEntry(
+            card_out,
+            fg_color=C_ENTRY,
+            placeholder_text=REPORT_DIR
+        )
+        self._report_dir_entry.insert(0, REPORT_DIR)
+        self._report_dir_entry.grid(
+            row=1,
+            column=1,
+            padx=(0, 8),
+            pady=10,
+            sticky="ew"
+        )
+
+        ctk.CTkButton(
+            card_out,
+            text="Browse",
+            width=80,
+            fg_color=C_ENTRY,
+            hover_color=C_HOVER,
+            font=ctk.CTkFont(size=12),
+            corner_radius=6,
+            command=self._browse_save_dir
+        ).grid(row=1, column=2, padx=(0, 16), pady=10)
+
+        # Voliteľné zahrnutie detailnej tabuľky failures do PDF reportu
+        self._include_failures_var = ctk.BooleanVar(value=False)
+
+        ctk.CTkCheckBox(
+            card_out,
+            text="Include failure details table",
+            variable=self._include_failures_var,
+            font=ctk.CTkFont(size=12),
+            text_color=C_TEXT
+        ).grid(
+            row=2,
+            column=0,
+            columnspan=3,
+            padx=16,
+            pady=(0, 12),
+            sticky="w"
+        )
+
+        # ── PDF Signing ─────────────────────────────────────────
+        t_row = self._card_header(scroll, "PDF Signing", t_row)
+        card_sign = ctk.CTkFrame(scroll, fg_color=C_CARD, corner_radius=10)
+        card_sign.grid(row=t_row, column=0, padx=16, pady=(0, 4), sticky="ew")
+        card_sign.grid_columnconfigure(1, weight=1)
+        t_row += 1
+
+        self._sign_var = ctk.BooleanVar(value=False)
+
+        ctk.CTkCheckBox(
+            card_sign,
+            text="Sign PDF",
+            variable=self._sign_var,
+            font=ctk.CTkFont(size=12),
+            text_color=C_TEXT,
+            command=self._on_sign_toggle
+        ).grid(row=0, column=0, columnspan=3, padx=16, pady=(12, 8), sticky="w")
+
+        self._cert_sign_frame = ctk.CTkFrame(card_sign, fg_color="transparent")
+        self._cert_sign_frame.grid(row=1, column=0, columnspan=3, sticky="ew")
+        self._cert_sign_frame.grid_columnconfigure(1, weight=1)
+        self._cert_sign_frame.grid_remove()
+
+        ctk.CTkLabel(
+            self._cert_sign_frame,
+            text="Certificate",
+            font=ctk.CTkFont(size=15),
+            text_color=C_LABEL,
+            anchor="w",
+            width=self.LBL_W
+        ).grid(row=0, column=0, padx=(16, 8), pady=8, sticky="w")
+
+        self._cert_path_entry = ctk.CTkEntry(
+            self._cert_sign_frame,
+            fg_color=C_ENTRY,
+            placeholder_text="Path to cert.p12"
+        )
+
+        default_cert = os.path.join(REPORT_DIR, "cert.p12")
+        if os.path.exists(default_cert):
+            self._cert_path_entry.insert(0, default_cert)
+
+        self._cert_path_entry.grid(
+            row=0,
+            column=1,
+            padx=(0, 8),
+            pady=8,
+            sticky="ew"
+        )
+
+        ctk.CTkButton(
+            self._cert_sign_frame,
+            text="Browse",
+            width=80,
+            fg_color=C_ENTRY,
+            hover_color=C_HOVER,
+            font=ctk.CTkFont(size=12),
+            corner_radius=6,
+            command=self._browse_cert
+        ).grid(row=0, column=2, padx=(0, 16), pady=8)
+
+        ctk.CTkLabel(
+            self._cert_sign_frame,
+            text="Password",
+            font=ctk.CTkFont(size=15),
+            text_color=C_LABEL,
+            anchor="w",
+            width=self.LBL_W
+        ).grid(row=1, column=0, padx=(16, 8), pady=(0, 12), sticky="w")
+
+        self.cert_pass = ctk.CTkEntry(
+            self._cert_sign_frame,
+            show="•",
+            placeholder_text="Password for cert.p12",
+            fg_color=C_ENTRY
+        )
+        self.cert_pass.grid(
+            row=1,
+            column=1,
+            columnspan=2,
+            padx=(0, 16),
+            pady=(0, 12),
+            sticky="ew"
+        )
+
+        # ── Bottom buttons ──────────────────────────────────────
+        ctk.CTkFrame(
+            outer,
+            height=1,
+            fg_color=darken(C_CONTENT, 15)
+        ).grid(row=1, column=0, sticky="ew")
+
+        bf = ctk.CTkFrame(outer, fg_color=C_CONTENT, height=48)
+        bf.grid(row=2, column=0, sticky="ew", padx=0, pady=0)
+        bf.grid_propagate(False)
+        bf.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkButton(
+            bf,
+            text="📄 Generate Report",
+            width=150,
+            height=32,
+            fg_color=C_PURPLE,
+            hover_color=darken(C_PURPLE, 25),
+            font=ctk.CTkFont(size=12),
+            corner_radius=6,
+            command=self._generate_report
+        ).grid(row=0, column=1, padx=4, pady=8)
+
+        ctk.CTkButton(
+            bf,
+            text="🗑 Delete Data",
+            width=110,
+            height=32,
+            fg_color=C_DANGER,
+            hover_color=darken(C_DANGER, 25),
+            font=ctk.CTkFont(size=12),
+            corner_radius=6,
+            command=self._delete_data
+        ).grid(row=0, column=2, padx=(4, 16), pady=8)
+
+        return outer
+
+    def _on_sign_toggle(self):
+        if self._sign_var.get():
+            self._cert_sign_frame.grid()
+        else:
+            self._cert_sign_frame.grid_remove()
+
+    def _browse_save_dir(self):
+        path = fd.askdirectory(title="Select output folder",
+                               initialdir=self._report_dir_entry.get().strip() or REPORT_DIR)
+        if path:
+            self._report_dir_entry.delete(0, "end")
+            self._report_dir_entry.insert(0, path)
+
+    def _browse_cert(self):
+        path = fd.askopenfilename(title="Select certificate",
+                                  filetypes=[("PKCS#12", "*.p12 *.pfx"), ("All files", "*.*")],
+                                  initialdir=REPORT_DIR)
+        if path:
+            self._cert_path_entry.delete(0, "end")
+            self._cert_path_entry.insert(0, path)
+
+    def _browse_locustfile(self):
+        path = fd.askopenfilename(
+            title="Select Locustfile",
+            initialdir=os.path.join(BASE_DIR, "locust_tests"),
+            filetypes=[("Python files", "*.py"), ("All files", "*.*")]
+        )
+        if path:
+            self._locustfile_paths[self._active_page] = path
+            self._locustfile_label.configure(text=os.path.basename(path), text_color=C_TEXT)
+            self.write_log(f"✓ Locustfile: {os.path.basename(path)}")
+
+    def _clear_locustfile(self):
+        self.locustfile_path = None
+        if self._active_page in self._pages and isinstance(self._pages.get(self._active_page), dict):
+            self._pages[self._active_page]["locustfile_label"].configure(
+                text="", text_color=C_MUTED
+            )
+        else:
+            self._locustfile_label.configure(
+                text="default: Locustfile_http.py", text_color=C_MUTED
+            )
+        if self._active_page in self._locustfile_paths:
+            self._locustfile_paths[self._active_page] = None
+
+    def _delete_data(self):
+        deleted = []
+        errors  = []
+        for f in glob.glob(os.path.join(DATA_DIR, "*.csv")):
+            try:
+                os.remove(f)
+                deleted.append(os.path.basename(f))
+            except Exception as e:
+                errors.append(f"{os.path.basename(f)}: {e}")
+        for fname in ["test_config.csv"]:
+            fpath = os.path.join(BASE_DIR, fname)
+            if os.path.exists(fpath):
+                try:
+                    os.remove(fpath)
+                    deleted.append(fname)
+                except Exception as e:
+                    errors.append(f"{fname}: {e}")
+        if deleted:
+            self.write_log(f"🗑 Deleted: {', '.join(deleted)}")
+        if errors:
+            self.write_log(f"⚠ Errors: {', '.join(errors)}")
+        if not deleted and not errors:
+            self.write_log("ℹ No data files found to delete")
+
+    # ================================================================
+    # LOG
+    # ================================================================
+
+    def _build_log(self):
+        self._paned = tk.PanedWindow(
+            self, orient=tk.VERTICAL,
+            bg="#2a2a2a", sashwidth=6,
+            sashrelief="raised", sashpad=2
+        )
+        self._paned.grid(row=0, column=1, sticky="nsew")
+        self.grid_rowconfigure(0, weight=1)
+
+        self._logframe = tk.Frame(self._paned, bg="#0d1117")
+        self._logframe.grid_columnconfigure(0, weight=1)
+        self._logframe.grid_rowconfigure(1, weight=1)
+
+        hdr = tk.Frame(self._logframe, bg="#0d1117")
+        hdr.grid(row=0, column=0, padx=16, pady=(6, 2), sticky="ew")
+        hdr.grid_columnconfigure(0, weight=1)
+
+        tk.Label(hdr, text="Output Log",
+                 font=("Courier New", 10, "bold"),
+                 bg="#0d1117", fg=C_MUTED
+                 ).grid(row=0, column=0, sticky="w")
+
+        ctk.CTkButton(hdr, text="Clear", command=self.clear_log,
+                      fg_color="#333", hover_color="#555",
+                      font=ctk.CTkFont(size=11),
+                      corner_radius=6, height=24, width=70
+                      ).grid(row=0, column=1, sticky="e")
+
+        self.log = ctk.CTkTextbox(
+            self._logframe, corner_radius=0,
+            font=ctk.CTkFont(size=11, family="Courier New"),
+            fg_color="#0d1117", text_color="#c9d1d9",
+            state="disabled"
+        )
+        self.log.grid(row=1, column=0, sticky="nsew")
+
+        self.statusbar = ctk.CTkLabel(
+            self._logframe, text="Ready",
+            font=ctk.CTkFont(size=10),
+            text_color=C_MUTED, anchor="w",
+            fg_color=C_SIDEBAR, corner_radius=0, height=22
+        )
+        self.statusbar.grid(row=2, column=0, sticky="ew")
+
+    # ================================================================
+    # PAGE – REPORTS
+    # ================================================================
+
+    def _build_page_reports(self, parent):
+        outer = ctk.CTkFrame(parent, fg_color="transparent", corner_radius=0)
+        outer.grid(row=0, column=0, sticky="nsew")
+        outer.grid_columnconfigure(0, weight=1)
+        outer.grid_rowconfigure(0, weight=0)
+        outer.grid_rowconfigure(1, weight=0)
+        outer.grid_rowconfigure(2, weight=1)
+
+        toolbar = ctk.CTkFrame(outer, fg_color=C_CARD, corner_radius=0, height=44)
+        toolbar.grid(row=0, column=0, sticky="ew", padx=0, pady=(0, 1))
+        toolbar.grid_propagate(False)
+        toolbar.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkButton(
+            toolbar, text="⟳  Refresh", width=110, height=30,
+            fg_color=C_ENTRY, hover_color=C_HOVER,
+            font=ctk.CTkFont(size=12), corner_radius=6,
+            command=self._refresh_reports
+        ).grid(row=0, column=0, padx=12, pady=7, sticky="w")
+
+        self._reports_dir_label = ctk.CTkLabel(
+            toolbar, text=REPORT_DIR,
+            font=ctk.CTkFont(size=10), text_color=C_MUTED, anchor="e"
+        )
+        self._reports_dir_label.grid(row=0, column=1, padx=12, sticky="e")
+
+        hdr = ctk.CTkFrame(outer, fg_color=darken(C_CARD, 15), corner_radius=0, height=32)
+        hdr.grid(row=1, column=0, sticky="ew", padx=(8, 0))
+        hdr.grid_propagate(False)
+        hdr.grid_columnconfigure(0, weight=1)
+        hdr.grid_columnconfigure(1, minsize=220, weight=0)
+        hdr.grid_columnconfigure(2, minsize=160, weight=0)
+        hdr.grid_columnconfigure(3, minsize=110, weight=0)
+
+        for col, txt in enumerate(["Report name", "Created", "Signed", ""]):
+            ctk.CTkLabel(
+                hdr, text=txt.upper(),
+                font=ctk.CTkFont(size=10, weight="bold"),
+                text_color=C_MUTED, anchor="w"
+            ).grid(row=0, column=col, padx=(4 if col == 0 else 8, 8), pady=6, sticky="w")
+
+        self._reports_scroll = ctk.CTkScrollableFrame(
+            outer, fg_color="transparent", corner_radius=0
+        )
+        self._reports_scroll.grid(row=2, column=0, sticky="nsew", padx=0, pady=0)
+        self._reports_scroll.grid_columnconfigure(0, weight=1)
+
+        self._refresh_reports()
+        return outer
+
+    def _is_pdf_signed(self, path):
+        try:
+            with open(path, "rb") as f:
+                content = f.read()
+            return b"/ByteRange" in content and b"/Contents" in content
+        except Exception:
+            return False
+
+    def _scan_reports(self):
+        reports = []
+        if not os.path.isdir(REPORT_DIR):
+            return reports
+        for fname in sorted(os.listdir(REPORT_DIR),
+                            key=lambda f: os.path.getmtime(os.path.join(REPORT_DIR, f)),
+                            reverse=True):
+            if not fname.lower().endswith(".pdf"):
+                continue
+            fpath = os.path.join(REPORT_DIR, fname)
+            try:
+                ctime    = os.path.getmtime(fpath)
+                date_str = time.strftime("%d-%m-%y  %H:%M", time.localtime(ctime))
+                signed   = self._is_pdf_signed(fpath)
+                reports.append((fname, date_str, signed, fpath))
+            except Exception:
+                pass
+        return reports
+
+    def _refresh_reports(self):
+        for w in self._reports_scroll.winfo_children():
+            w.destroy()
+        reports = self._scan_reports()
+        if not reports:
+            ctk.CTkLabel(
+                self._reports_scroll,
+                text="No PDF reports found in  " + REPORT_DIR,
+                font=ctk.CTkFont(size=12), text_color=C_MUTED
+            ).grid(row=0, column=0, pady=40)
+            return
+        for i, (fname, date_str, signed, fpath) in enumerate(reports):
+            bg = C_CARD if i % 2 == 0 else darken(C_CARD, 8)
+            row_frame = ctk.CTkFrame(self._reports_scroll, fg_color=bg, corner_radius=6, height=40)
+            row_frame.grid(row=i, column=0, sticky="ew", padx=0, pady=2)
+            row_frame.grid_propagate(False)
+            row_frame.grid_columnconfigure(0, weight=1)
+            row_frame.grid_columnconfigure(1, minsize=220, weight=0)
+            row_frame.grid_columnconfigure(2, minsize=160, weight=0)
+            row_frame.grid_columnconfigure(3, minsize=110, weight=0)
+
+            ctk.CTkLabel(row_frame, text=fname,
+                         font=ctk.CTkFont(size=16), text_color=C_TEXT, anchor="w"
+                         ).grid(row=0, column=0, padx=(4, 8), sticky="w")
+            ctk.CTkLabel(row_frame, text=date_str,
+                         font=ctk.CTkFont(size=16, family="Courier New"),
+                         text_color=C_LABEL, anchor="w"
+                         ).grid(row=0, column=1, padx=8, sticky="w")
+
+            sign_text  = "✅ Signed" if signed else "❌ No"
+            sign_color = "#00cc00"  if signed else "#ff1a1a"
+            ctk.CTkLabel(row_frame, text=sign_text,
+                         font=ctk.CTkFont(size=16), text_color=sign_color, anchor="w"
+                         ).grid(row=0, column=2, padx=8, sticky="w")
+
+            btn_frame = ctk.CTkFrame(row_frame, fg_color="transparent")
+            btn_frame.grid(row=0, column=3, padx=(4, 8), sticky="e")
+            ctk.CTkButton(btn_frame, text="Open", width=60, height=26,
+                          fg_color=C_ACTIVE, hover_color=darken(C_ACTIVE, 20),
+                          font=ctk.CTkFont(size=11), corner_radius=5,
+                          command=lambda p=fpath: self._open_report(p)
+                          ).grid(row=0, column=0, padx=(0, 4))
+            ctk.CTkButton(btn_frame, text="🗑", width=34, height=26,
+                          fg_color=darken(C_DANGER, 10), hover_color=C_DANGER,
+                          font=ctk.CTkFont(size=11), corner_radius=5,
+                          command=lambda p=fpath, n=fname: self._delete_report(p, n)
+                          ).grid(row=0, column=1)
+
+    def _open_report(self, path):
+        if os.geteuid() != 0:
+            self._open_file(path)
+        else:
+            self.write_log(f"⚠ Running as root — please open the report manually:")
+            self.write_log(f"   {path}")
+
+    def _delete_report(self, path, name):
+        try:
+            os.remove(path)
+            self.write_log(f"🗑 Deleted: {name}")
+            self._refresh_reports()
+        except Exception as e:
+            self.write_log(f"✗ Cannot delete {name}: {e}")
+
+    # ================================================================
+    # CARD / FIELD HELPERS
+    # ================================================================
+
+    def _card_header(self, parent, text, row):
+        ctk.CTkLabel(
+            parent, text=text.upper(),
+            font=ctk.CTkFont(size=10, weight="bold"),
+            text_color=C_HEADER, anchor="w"
+        ).grid(row=row, column=0, padx=20, pady=(16, 4), sticky="w")
+        return row + 1
+
+    def _card(self, parent, row):
+        card = ctk.CTkFrame(parent, fg_color=C_CARD, corner_radius=10)
+        card.grid(row=row, column=0, padx=16, pady=(0, 4), sticky="ew")
+        card.grid_columnconfigure(0, minsize=self.LBL_W)
+        card.grid_columnconfigure(1, minsize=self.ENTR_W, weight=1)
+        card.grid_columnconfigure(2, minsize=self.LBL_W)
+        card.grid_columnconfigure(3, minsize=self.ENTR_W, weight=1)
+        return card
+
+    def _field_row(self, card, row, label, key, default, col=0, ph=None, help: str = None):
+        lbl = ctk.CTkLabel(
+            card,
+            text=f"{label} ⓘ",
+            font=ctk.CTkFont(size=15),
+            text_color=C_TEXT,
+            anchor="w",
+            width=self.LBL_W,
+            cursor="question_arrow" if help else "arrow",
+        )
+        lbl.grid(row=row, column=col, padx=(16, 8), pady=10, sticky="w")
+        if help:
+            CTkToolTip(lbl, message=help, delay=0.3, x_offset=10, y_offset=-10)
+
+        e = ctk.CTkEntry(card, width=self.ENTR_W,
+                         placeholder_text=ph or default or "",
+                         fg_color=C_ENTRY)
+        if default:
+            e.insert(0, default)
+        e.grid(row=row, column=col + 1, padx=(0, 16), pady=10, sticky="ew")
+        self.entries[key] = e
+        self._labels[key] = lbl
+
+    def _setup_process_field_highlight(self, key):
+        entry = self.entries.get(key)
+        if not entry:
+            return
+        cpu_count = int(multiprocessing.cpu_count())
+
+        def on_change(*args):
+            val = entry.get().strip()
+            try:
+                num = int(val)
+                if num < -1 or num == 0 or num > cpu_count:
+                    entry.configure(fg_color="#4a1a1a")
+                else:
+                    entry.configure(fg_color=C_ENTRY)
+            except ValueError:
+                entry.configure(fg_color="#4a1a1a")
+
+
+        var = ctk.StringVar()
+        current_value = entry.get()
+        entry.configure(textvariable=var)
+        var.set(current_value)
+        var.trace_add("write", on_change)
+        self._process_vars = getattr(self, "_process_vars", {})
+        self._process_vars[key] = var
+        entry.after(100, on_change)
+
+    def _setup_target_rps_field_highlight(self, key):
+        entry = self.entries.get(key)
+        if not entry:
+            return
+
+        def on_change(*args):
+            val = entry.get().strip()
+            if val == "":
+                entry.configure(fg_color=C_ENTRY)
+                return
+            try:
+                num = int(val)
+                if num < -1 or num == 0:
+                    entry.configure(fg_color="#4a1a1a")
+                else:
+                    entry.configure(fg_color=C_ENTRY)
+            except ValueError:
+                entry.configure(fg_color="#4a1a1a")
+
+        current_value = entry.get()
+        var = ctk.StringVar(value=current_value)
+        entry.configure(textvariable=var)
+        var.set(current_value)
+        var.trace_add("write", on_change)
+        self._process_vars = getattr(self, "_process_vars", {})
+        self._process_vars[key] = var
+        entry.after(100, on_change)
+
+    def _setup_positive_field_highlight(self, key):
+        entry = self.entries.get(key)
+        if not entry:
+            return
+
+        def on_change(*args):
+            val = entry.get().strip()
+            try:
+                num = float(val)
+                if num <= 0:
+                    entry.configure(fg_color="#4a1a1a")
+                else:
+                    entry.configure(fg_color=C_ENTRY)
+            except ValueError:
+                entry.configure(fg_color="#4a1a1a")
+
+        var = ctk.StringVar()
+        current_value = entry.get()
+        entry.configure(textvariable=var)
+        var.set(current_value)
+        var.trace_add("write", on_change)
+        self._process_vars = getattr(self, "_process_vars", {})
+        self._process_vars[key] = var
+
+    def _setup_percentage_field_highlight(self, key):
+        entry = self.entries.get(key)
+        if not entry:
+            return
+
+        def on_change(*args):
+            val = entry.get().strip()
+            try:
+                num = float(val)
+                if num < 0 or num > 100:
+                    entry.configure(fg_color="#4a1a1a")
+                else:
+                    entry.configure(fg_color=C_ENTRY)
+            except ValueError:
+                entry.configure(fg_color="#4a1a1a")
+
+        var = ctk.StringVar()
+        current_value = entry.get()
+        entry.configure(textvariable=var)
+        var.set(current_value)
+        var.trace_add("write", on_change)
+        self._process_vars = getattr(self, "_process_vars", {})
+        self._process_vars[key] = var
+        entry.after(100, on_change)
+
+    def _combo_row(self, card, row, label, key, values, default, col=0, help: str = None):
+        lbl = ctk.CTkLabel(
+            card,
+            text=f"{label} ⓘ",
+            font=ctk.CTkFont(size=15),
+            text_color=C_TEXT,
+            anchor="w",
+            width=self.LBL_W,
+            cursor="question_arrow" if help else "arrow",
+        )
+        lbl.grid(row=row, column=col, padx=(16, 8), pady=10, sticky="w")
+        if help:
+            CTkToolTip(lbl, message=help, delay=0.3, x_offset=10, y_offset=-10)
+
+        cb = ctk.CTkComboBox(
+            card, width=self.ENTR_W, values=values,
+            fg_color=C_ENTRY,
+            button_color=C_ACTIVE,
+            button_hover_color=C_HOVER,
+            dropdown_fg_color=C_CARD,
+            dropdown_hover_color=darken(C_CARD, 15),
+            dropdown_text_color=C_TEXT,
+        )
+        cb.set(default if default in values else (values[0] if values else default))
+        cb.grid(row=row, column=col + 1, padx=(0, 16), pady=10, sticky="ew")
+        self.entries[key] = cb
+        self._labels[key] = lbl
+
+    # ================================================================
+    # IP VERSION HELPERS
+    # ================================================================
+
+    def _on_ipv6_mode_change(self):
+        if self.ipv6_mode.get() == "range":
+            self.ipv6_prefix_frame.grid_remove()
+            self.ipv6_range_frame.grid()
+        else:
+            self.ipv6_range_frame.grid_remove()
+            self.ipv6_prefix_frame.grid()
+
+    def _active_ip_version(self):
+        return "ipv6" if self.ip_tab.get() == "IPv6" else "ipv4"
+
+    def _get_ip_start(self):
+        if self._active_ip_version() == "ipv6":
+            if self.ipv6_mode.get() == "prefix":
+                import ipaddress
+                net = ipaddress.IPv6Network(self.entries["ip6_prefix"].get().strip(), strict=False)
+                return str(next(net.hosts()))
+            return self.entries["ip6_start"].get().strip()
+        return self.entries["ip_start"].get().strip()
+
+    def _get_ip_end(self):
+        if self._active_ip_version() == "ipv6":
+            if self.ipv6_mode.get() == "prefix":
+                ip_list = ipv6_prefix_to_list(
+                    self.entries["ip6_prefix"].get().strip(),
+                    max_count=256
+                )
+                return ip_list[-1] if ip_list else ""
+            return self.entries["ip6_end"].get().strip()
+        return self.entries["ip_end"].get().strip()
+
+    def _get_ip_list(self, existing_entries=None):
+        if self._active_ip_version() == "ipv6":
+            if self.ipv6_mode.get() == "prefix":
+                existing_ips = set()
+
+                if existing_entries:
+                    existing_ips = {ip for ip, _ in existing_entries}
+
+                excluded_ips = set()
+                target_ip = self._get_target_ip_for_pool_exclusion()
+
+                if target_ip:
+                    excluded_ips.add(target_ip)
+
+                return ipv6_prefix_to_list(
+                    self.entries["ip6_prefix"].get().strip(),
+                    max_count=256,
+                    existing_ips=existing_ips,
+                    excluded_ips=excluded_ips
+                )
+
+            return ipv6_range_to_list(self._get_ip_start(), self._get_ip_end())
+
+        return None
+
+    def _get_target_clean(self):
+        return urlparse(self.get("target")).hostname or self.get("target")
+
+    def _get_target_ip_for_pool_exclusion(self):
+        """
+        Returns target IP address if the target host is an IP literal.
+        Used to prevent adding the server/target IP into the source IP pool.
+        """
+        try:
+            host = urlparse(self.get("target")).hostname or self.get("target")
+            host = str(host).strip().lstrip("[").rstrip("]")
+
+            try:
+                ipaddress.IPv6Address(host)
+                return host
+            except ValueError:
+                pass
+
+            try:
+                ipaddress.IPv4Address(host)
+                return host
+            except ValueError:
+                pass
+
+        except Exception:
+            pass
+
+        return None
+
+
+    def _get_source_range(self):
+        start = self._get_ip_start()
+        end   = self._get_ip_end()
+        return f"{start} - {end}"
+
+    def _get_prefix_len(self):
+        """Vráti aktuálny prefix ako reťazec podľa aktívnej IP verzie."""
+        if self._active_ip_version() == "ipv6":
+            if self.ipv6_mode.get() == "prefix":
+                try:
+                    net = ipaddress.IPv6Network(
+                        self.entries["ip6_prefix"].get().strip(),
+                        strict=False
+                    )
+                    return str(net.prefixlen)
+                except Exception:
+                    return "64"
+
+            return self.entries["ipv6rangeprefix"].get()
+
+        return self.entries["ipv4prefix"].get()
+
+    # ================================================================
+    # GENERIC HELPERS
+    # ================================================================
+
+
+    # ================================================================
+    # OPEN FILE  (platform helper – used by report generator & report list)
+    # ================================================================
+
+    def _open_file(self, path):
+        try:
+            if sys.platform.startswith("linux"):
+                display = os.environ.get("DISPLAY", "").strip()
+                wayland = os.environ.get("WAYLAND_DISPLAY", "").strip()
+                if not display and not wayland:
+                    self.write_log("⚠ No display available — open the file manually.")
+                    return
+                subprocess.Popen(["xdg-open", path])
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", path])
+            else:
+                os.startfile(path)
+        except Exception as e:
+            self.write_log(f"✗ Cannot open file: {e}")
+
+    def write_log(self, msg):
+        self.log_queue.put(msg)
+
+    def _poll_log_queue(self):
+        try:
+            while True:
+                msg = self.log_queue.get_nowait()
+                self.log.configure(state="normal")
+                self.log.insert("end", msg + "\n")
+                self.log.see("end")
+                self.log.configure(state="disabled")
+                self.statusbar.configure(text=f"●  {msg[:100]}")
+        except queue.Empty:
+            pass
+        finally:
+            self.after(100, self._poll_log_queue)   # type: ignore
+
+    def clear_log(self):
+        self.log.configure(state="normal")
+        self.log.delete("0.0", "end")
+        self.log.configure(state="disabled")
+        self.statusbar.configure(text="●  Log cleared")
+
+    def get(self, key):
+        """Return a GUI entry value safely.
+
+        The merged GUI contains page-specific fields only for some tabs
+        (for example tcp_target_rps/udp_target_rps, but no http_target_rps).
+        Returning an empty string for missing optional fields prevents the
+        HTTP/S workflow from failing with KeyError while keeping the existing
+        `... or fallback` logic in the caller.
+        """
+        widget = self.entries.get(key)
+        if widget is None:
+            return ""
+        try:
+            return widget.get().strip()
+        except AttributeError:
+            return ""
+    def get_request_body(self):
+        if not hasattr(self, "request_body_text"):
+            return ""
+        return self.request_body_text.get("0.0", "end").strip()
+
+    def _on_http_method_change(self, method=None):
+        method = method or self.get("http_method")
+
+        if method == "POST":
+            self._request_body_frame.grid()
+        else:
+            self._request_body_frame.grid_remove()
+
+    def get_comment(self):
+        text = self.comment_text.get("0.0", "end").strip()
+        if text == "Write a comment for the report...":
+            return ""
+        return text
+
+    def _save_port_pool(self):
+        port_str  = self.get("src_ports")
+        port_file = os.path.join(BASE_DIR, "port_pool.txt")
+        if port_str:
+            ports = parse_ports(port_str)
+            if ports:
+                with open(port_file, "w") as f:
+                    f.write(port_str)
+                self.write_log(f"✓ Port pool saved ({len(ports)} ports)")
+            else:
+                self.write_log("⚠ Invalid port format")
+        else:
+            if os.path.exists(port_file):
+                os.remove(port_file)
+            try:
+                with open("/proc/sys/net/ipv4/ip_local_port_range") as f:
+                    lo, hi = f.read().split()
+                self.write_log(f"ℹ Source ports: OS ephemeral range {lo}–{hi}")
+            except Exception:
+                self.write_log("ℹ Source ports: OS assigned automatically")
+
+    def _read_ip_pool_summary(self):
+        """Return active IP pool count and display range from ip_pool.txt.
+
+        The PDF report uses this snapshot. If the pool file is missing or empty,
+        the report should not guess values from the GUI fields because those may
+        no longer match the IPs actually assigned to the interface.
+        """
+        pool_file = os.path.join(BASE_DIR, "ip_pool.txt")
+        pool_count = 0
+        pool_range = ""
+
+        if not os.path.exists(pool_file):
+            return pool_count, pool_range
+
+        try:
+            entries = [entry for entry in parse_pool_lines(pool_file) if entry and entry[0]]
+        except Exception:
+            return pool_count, pool_range
+
+        pool_count = len(entries)
+
+        if entries:
+            first_ip, first_prefix = entries[0]
+            last_ip, last_prefix = entries[-1]
+            first_prefix = first_prefix or self._get_prefix_len()
+            last_prefix = last_prefix or first_prefix
+
+            if pool_count == 1:
+                pool_range = f"{first_ip}/{first_prefix}"
+            else:
+                pool_range = f"{first_ip}/{first_prefix} - {last_ip}/{last_prefix}"
+
+        return pool_count, pool_range
+
+    def _save_test_config(self, script_dir):
+        config_file  = os.path.join(script_dir, "test_config.csv")
+        target_clean = self._get_target_clean()
+        ip_ver       = self._active_ip_version()
+
+        pfx = self._active_page.lower()
+        try:
+            processes = self.entries[f"{pfx}_processes"].get().strip()
+        except KeyError:
+            processes = self.get("processes") or "-1"
+        if processes == "-1":
+            processes = str(multiprocessing.cpu_count())
+
+        # Correct host extraction for IPv4, IPv6 and hostnames.
+        # Examples:
+        #   http://192.168.100.73:8080        -> 192.168.100.73
+        #   http://[fd00:100::73]:8080        -> fd00:100::73
+        #   https://www.example.com           -> www.example.com
+        try:
+            parsed = urlparse(self.get("target"))
+            clean = parsed.hostname or target_clean
+        except Exception:
+            clean = target_clean
+
+        clean = str(clean).strip().lstrip("[").rstrip("]")
+
+        try:
+            socket.inet_pton(socket.AF_INET6, clean)
+            resolved_ip = clean
+        except OSError:
+            try:
+                socket.inet_pton(socket.AF_INET, clean)
+                resolved_ip = clean
+            except OSError:
+                try:
+                    af = socket.AF_INET6 if ip_ver == "ipv6" else socket.AF_INET
+                    resolved_ip = socket.getaddrinfo(clean, None, af)[0][4][0]
+                except Exception:
+                    try:
+                        resolved_ip = socket.gethostbyname(clean)
+                    except Exception:
+                        resolved_ip = clean
+
+        src_ip      = self.get("reach_src_ip")    or self._get_ip_start()
+        reach_iface = self.get("reach_interface") or self.get("interface")
+
+        pool_count, pool_ips = self._read_ip_pool_summary()
+
+        with open(config_file, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=[
+                "target", "target_clean", "target_ip", "ip_start", "ip_end",
+                "source_range", "ip_pool_count", "ip_pool_range", "src_ports",
+                "ip_version", "interface",
+
+                "http_method", "endpoint_path",
+                "processes", "stop_timeout", "connect_timeout", "read_timeout",
+
+                "reach_interval", "reach_timeout", "reach_src_ip", "reach_interface",
+                "request_threshold", "reach_threshold", "test_type", "target_rps",
+            ])
+            writer.writeheader()
+            writer.writerow({
+                "target":           self.get("target"),
+                "target_clean":     target_clean,
+                "target_ip":        resolved_ip,
+                "ip_start":         self._get_ip_start(),
+                "ip_end":           self._get_ip_end(),
+                "source_range":     self._get_source_range(),
+                "ip_pool_count":    pool_count,
+                "ip_pool_range":    pool_ips,
+                "src_ports":        self.get("src_ports"),
+                "ip_version":       ip_ver,
+                "interface":        self.get("interface"),
+                "reach_interval":   self.get("reach_interval") or "5",
+                "reach_timeout":    self.get("reach_timeout") or "5",
+                "reach_src_ip":     src_ip,
+                "reach_interface":  reach_iface,
+                "request_threshold": self.get("request_threshold") or "1",
+                "reach_threshold":  self.get("reach_threshold") or "5",
+                "http_method":      self.get("http_method") or "GET",
+                "endpoint_path":    normalize_endpoint_paths(self.get("endpoint_path") or "/"),
+                "processes":        processes,
+                "stop_timeout":     self.get("stop_timeout") or "60",
+                "connect_timeout":  self.get("connect_timeout") or "5",
+                "read_timeout":     self.get("read_timeout") or "15",
+                "test_type":        self.get("test_type"),
+                "target_rps": self.get(f"{str(self._active_page).replace('/S', '').lower()}_target_rps") or "0",
+            })
+        self.write_log(f"✓ Config saved → {target_clean} ({resolved_ip}) [{ip_ver.upper()}]")
+
+    def _load_test_config(self, script_dir):
+        config_file = os.path.join(script_dir, "test_config.csv")
+
+        def _clean_csv_value(value, fallback=""):
+            if pd.isna(value):
+                return fallback
+
+            value = str(value).strip()
+
+            if value.lower() in ("nan", "none", "null", ""):
+                return fallback
+
+            return value
+
+        if os.path.exists(config_file):
+            try:
+                cfg = pd.read_csv(config_file).iloc[0]
+
+                target_clean = _clean_csv_value(cfg.get("target_clean", ""), "")
+                target_ip = _clean_csv_value(cfg.get("target_ip", ""), target_clean)
+                source_range = _clean_csv_value(cfg.get("source_range", ""), "")
+                ip_pool_count = _clean_csv_value(cfg.get("ip_pool_count", ""), "")
+                ip_pool_range = _clean_csv_value(cfg.get("ip_pool_range", ""), "")
+
+                # Backward-compatible fallback for reports generated from older
+                # test_config.csv files that did not contain IP pool metadata.
+                if not ip_pool_count or ip_pool_count == "0":
+                    fallback_count, fallback_range = self._read_ip_pool_summary()
+                    if fallback_count:
+                        ip_pool_count = str(fallback_count)
+                        if not ip_pool_range:
+                            ip_pool_range = fallback_range
+
+                interface = _clean_csv_value(cfg.get("interface", ""), "")
+
+                reach_src_ip = _clean_csv_value(cfg.get("reach_src_ip", ""), "")
+                reach_interface = _clean_csv_value(cfg.get("reach_interface", ""), "")
+                reach_interval_cfg = _clean_csv_value(cfg.get("reach_interval", ""), "5")
+                reach_timeout_cfg = _clean_csv_value(cfg.get("reach_timeout", ""), "5")
+
+                src_ports = _clean_csv_value(cfg.get("src_ports", ""), "")
+
+                request_threshold = float(
+                    _clean_csv_value(cfg.get("request_threshold", ""), "1")
+                )
+                reach_threshold = float(
+                    _clean_csv_value(cfg.get("reach_threshold", ""), "5")
+                )
+
+                test_type_cfg = _clean_csv_value(cfg.get("test_type", ""), "")
+                processes = _clean_csv_value(cfg.get("processes", ""), "")
+
+                stop_timeout = _clean_csv_value(cfg.get("stop_timeout", ""), "60")
+                target_rps = _clean_csv_value(cfg.get("target_rps", ""), "0")
+
+                http_method = _clean_csv_value(cfg.get("http_method", ""), "GET")
+                endpoint_path = normalize_endpoint_paths(
+                    _clean_csv_value(cfg.get("endpoint_path", ""), "/")
+                )
+                connect_timeout = _clean_csv_value(cfg.get("connect_timeout", ""), "5")
+                read_timeout = _clean_csv_value(cfg.get("read_timeout", ""), "15")
+
+                self.write_log(
+                    f"✓ Params: {target_clean} | {source_range} | "
+                    f"request_threshold={request_threshold}% | reach_threshold={reach_threshold}%"
+                )
+
+                return (
+                    target_clean, target_ip, source_range, interface,
+                    request_threshold, reach_threshold, test_type_cfg, processes, stop_timeout,
+                    reach_src_ip, ip_pool_count, ip_pool_range,
+                    http_method, endpoint_path, connect_timeout, read_timeout,
+                    src_ports, reach_interval_cfg, reach_timeout_cfg, reach_interface, target_rps,
+                )
+
+
+            except Exception as e:
+
+                self.write_log(f"⚠ Error reading config: {e}")
+
+        self.write_log("⚠ No test_config.csv found — please run a test first before generating a report.")
+
+        raise FileNotFoundError("test_config.csv not found or unreadable")
+
+    # ================================================================
+    # SETUP
+    # ================================================================
+
+    def _browse_custom_pool(self):
+        init_dir = IP_POOL_DIR if os.path.isdir(IP_POOL_DIR) else BASE_DIR
+        path = fd.askopenfilename(
+            title="Select IP pool file",
+            initialdir=init_dir,
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
+        )
+        if path:
+            self._custom_pool_entry.delete(0, "end")
+            self._custom_pool_entry.insert(0, path)
+            self.write_log(f"📂 Custom pool file: {path}")
+
+    def _clear_custom_pool(self):
+        self._custom_pool_entry.delete(0, "end")
+        self.write_log("✖ Custom pool file cleared — will use IP range")
+
+    def setup_env(self):
+        threading.Thread(target=self._setup_thread, daemon=True).start()
+
+    def _setup_thread(self):
+        try:
+            self.write_log("=" * 60)
+            self.write_log("▶ SETUP – Adding IPs to interface...")
+
+            ip_ver      = self._active_ip_version()
+            prefix_len  = self._get_prefix_len()
+            custom_file = self._custom_pool_entry.get().strip()
+            pool_path   = os.path.join(BASE_DIR, "ip_pool.txt")
+
+            existing_entries = []
+            if os.path.exists(pool_path):
+                existing_entries = parse_pool_lines(pool_path)
+                if existing_entries:
+                    self.write_log(
+                        f"📋 Existing ip_pool.txt: {len(existing_entries)} IPs (will be preserved)"
+                    )
+
+            tmp_pool = pool_path + ".new"
+
+            if custom_file:
+                if not os.path.exists(custom_file):
+                    self.write_log(f"✗ Custom pool file not found: {custom_file}")
+                    return
+
+                entries = parse_pool_lines(custom_file)
+                if not entries:
+                    self.write_log("✗ Custom pool file is empty")
+                    return
+
+                ip_list      = [ip for ip, _ in entries]
+                first_prefix = entries[0][1] if entries[0][1] else prefix_len
+
+                self.write_log(
+                    f"📂 Custom pool: {len(ip_list)} IPs, prefix=/{first_prefix} loaded"
+                )
+
+                create_pool(
+                    ip_start    = ip_list[0],
+                    ip_end      = ip_list[-1],
+                    interface   = self.get("interface"),
+                    output_file = tmp_pool,
+                    ip_version  = ip_ver,
+                    ip_list     = ip_list,
+                    prefix_len  = first_prefix,
+                )
+
+                self.write_log(f"✓ New IPs generated from custom file [{ip_ver.upper()}]")
+
+            else:
+                generated_ip_list = self._get_ip_list(existing_entries)
+
+                if ip_ver == "ipv6" and self.ipv6_mode.get() == "prefix":
+                    if not generated_ip_list:
+                        self.write_log("✗ No available IPv6 addresses found in selected prefix")
+                        return
+
+                    self.write_log(
+                        f"ℹ IPv6 prefix mode: generated next block of "
+                        f"{len(generated_ip_list)} unused IP addresses"
+                    )
+
+                create_pool(
+                    ip_start    = generated_ip_list[0] if generated_ip_list else self._get_ip_start(),
+                    ip_end      = generated_ip_list[-1] if generated_ip_list else self._get_ip_end(),
+                    interface   = self.get("interface"),
+                    output_file = tmp_pool,
+                    ip_version  = ip_ver,
+                    ip_list     = generated_ip_list,
+                    prefix_len  = prefix_len,
+                )
+
+                self.write_log(f"✓ New IPs generated [{ip_ver.upper()}]")
+
+            self._rewrite_pool_with_prefix(tmp_pool, prefix_len)
+            new_entries = parse_pool_lines(tmp_pool) if os.path.exists(tmp_pool) else []
+
+            merged, added = self._merge_pool_entries(
+                existing_entries,
+                new_entries,
+                prefix_len
+            )
+
+            self._write_pool_file(pool_path, merged, prefix_len)
+
+            try:
+                os.remove(tmp_pool)
+            except OSError:
+                pass
+
+            self.write_log(
+                f"✓ ip_pool.txt updated: {len(existing_entries)} existing "
+                f"+ {added} new = {len(merged)} total IPs (/{prefix_len})"
+            )
+            self.write_log("✓ SETUP COMPLETE")
+            self.write_log("=" * 60)
+
+        except Exception as e:
+            self.write_log(f"✗ Setup error: {e}")
+
+    def _merge_pool_entries(self, existing, new_entries, default_prefix):
+        """
+        Zlúči zoznam nových IP zápisov do existujúcich, pričom vynechá duplicity.
+        Vracia (merged list, počet pridaných).
+        """
+        seen_ips = {ip for ip, _ in existing}
+        added    = 0
+        merged   = list(existing)
+        for ip, prefix in new_entries:
+            if ip not in seen_ips:
+                merged.append((ip, prefix if prefix else default_prefix))
+                seen_ips.add(ip)
+                added += 1
+        return merged, added
+
+    def _write_pool_file(self, path, entries, default_prefix):
+        """Zapíše zoznam (ip, prefix) zápisov do súboru vo formáte IP/prefix."""
+        with open(path, "w") as f:
+            for ip, prefix in entries:
+                p = prefix if prefix else default_prefix
+                f.write(f"{ip}/{p}\n")
+
+    def _rewrite_pool_with_prefix(self, pool_path, default_prefix):
+        """
+        Prečíta ip_pool.txt a prepíše ho tak, aby každý riadok
+        bol vo formáte IP/prefix. Ak záznam prefix nemá, doplní default_prefix.
+        """
+        if not os.path.exists(pool_path):
+            return
+        entries = parse_pool_lines(pool_path)
+        self._write_pool_file(pool_path, entries, default_prefix)
+        self.write_log(
+            f"✓ ip_pool.txt rewritten to IP/prefix format "
+            f"({len(entries)} entries, default /{default_prefix})"
+        )
+
+
+    def _default_locustfile_for_page(self, page=None):
+        """Return the default Locustfile for the selected GUI page."""
+        page = page or self._active_page
+        defaults = {
+            "HTTP/S": os.path.join(BASE_DIR, "locust_tests", "Locustfile_http.py"),
+            "TCP": os.path.join(BASE_DIR, "locust_tests", "Locust_tcp.py"),
+            "UDP": os.path.join(BASE_DIR, "locust_tests", "Locust_udp.py"),
+        }
+        return defaults.get(page)
+
+    def _selected_locustfile_for_page(self, page=None):
+        page = page or self._active_page
+        return self._locustfile_paths.get(page) or self._default_locustfile_for_page(page)
+
+    # ================================================================
+    # RUN TEST
+    # ================================================================
+
+    def run_test(self):
+        active = self._active_page
+
+        if not self._validate_fields():
+            return
+
+        path = self._selected_locustfile_for_page(active)
+        if not path or not os.path.isfile(path):
+            self.write_log(f"✗ [{active}] Locustfile not found: {path}")
+            return
+
+        self.locustfile_path = path
+        self._locustfile_paths[active] = path
+        self._stop_requested = False
+        self._set_stop_enabled(True)
+        threading.Thread(target=self._run_test_thread, daemon=True).start()
+
+    def _set_stop_enabled(self, enabled):
+        self._stop_enabled = bool(enabled)
+        p = self._pages.get(self._active_page)
+
+        if p is not None and isinstance(p, dict) and "runbtn" in p and "stopbtn" in p:
+            run_button = p["runbtn"]
+            stop_button = p["stopbtn"]
+        else:
+            run_button = getattr(self, "runbtn", None)
+            stop_button = getattr(self, "stopbtn", None)
+
+        if run_button is None or stop_button is None:
+            return
+
+        if enabled:
+            run_button.configure(
+                fg_color="#B7950B",
+                hover_color="#B7950B",
+                text="⏳ Running...",
+                text_color="white",
+                state="disabled",
+                command=lambda: None
+            )
+            stop_button.configure(
+                fg_color=C_DANGER,
+                hover_color=darken(C_DANGER, 25),
+                text_color="white",
+                state="normal",
+                command=self.stop_locust
+            )
+        else:
+            run_button.configure(
+                fg_color=C_SUCCESS,
+                hover_color=darken(C_SUCCESS, 25),
+                text="▶ Start Test",
+                text_color="white",
+                state="normal",
+                command=self.run_test
+            )
+            stop_button.configure(
+                fg_color="#3a3a3a",
+                hover_color="#3a3a3a",
+                text_color="#aaaaaa",
+                state="disabled",
+                command=lambda: None
+            )
+
+    def _merge_stage_csvs(self, stage_dirs, output_dir):
+        import pandas as pd
+        import numpy as np
+
+        # ── history: concatenate with adjusted timestamps ──
+        history_frames = []
+        time_offset = 0
+        for stage_dir in stage_dirs:
+            hist_file = os.path.join(stage_dir, "report_stats_history.csv")
+            if not os.path.exists(hist_file):
+                continue
+            df = pd.read_csv(hist_file)
+            if df.empty:
+                continue
+            if history_frames:
+                last_ts = history_frames[-1]["Timestamp"].iloc[-1]
+                first_ts = df["Timestamp"].iloc[0]
+                if first_ts <= last_ts:
+                    df["Timestamp"] = df["Timestamp"] - first_ts + last_ts + 1
+            history_frames.append(df)
+
+        if history_frames:
+            pd.concat(history_frames, ignore_index=True).to_csv(
+                os.path.join(output_dir, "report_stats_history.csv"), index=False
+            )
+
+        # ── stats: aggregate across stages ──
+        stats_frames = []
+        for stage_dir in stage_dirs:
+            stats_file = os.path.join(stage_dir, "report_stats.csv")
+            if os.path.exists(stats_file):
+                stats_frames.append(pd.read_csv(stats_file))
+
+        if stats_frames:
+            df = pd.concat(stats_frames, ignore_index=True)
+            # drop aggregated rows, recompute at end
+            df = df[df["Name"] != "Aggregated"]
+            agg = df.groupby(["Type", "Name"]).apply(lambda g: pd.Series({
+                "Request Count": g["Request Count"].sum(),
+                "Failure Count": g["Failure Count"].sum(),
+                "Average Response Time": np.average(g["Average Response Time"], weights=g["Request Count"]),
+                "Min Response Time": g["Min Response Time"].min(),
+                "Max Response Time": g["Max Response Time"].max(),
+                "Average Content Size": np.average(g["Average Content Size"], weights=g["Request Count"]),
+                "Requests/s": g["Requests/s"].mean(),
+                "Failures/s": g["Failures/s"].mean(),
+                # percentiles: weighted average (approximation)
+                "50%": np.average(g["50%"], weights=g["Request Count"]),
+                "66%": np.average(g["66%"], weights=g["Request Count"]),
+                "75%": np.average(g["75%"], weights=g["Request Count"]),
+                "80%": np.average(g["80%"], weights=g["Request Count"]),
+                "90%": np.average(g["90%"], weights=g["Request Count"]),
+                "95%": np.average(g["95%"], weights=g["Request Count"]),
+                "98%": np.average(g["98%"], weights=g["Request Count"]),
+                "99%": np.average(g["99%"], weights=g["Request Count"]),
+                "99.9%": np.average(g["99.9%"], weights=g["Request Count"]),
+                "99.99%": np.average(g["99.99%"], weights=g["Request Count"]),
+                "100%": g["100%"].max(),
+                "Median Response Time": np.average(g["Median Response Time"], weights=g["Request Count"]),
+            }), include_groups=False).reset_index()
+
+            # add aggregated row
+            total = agg["Request Count"].sum()
+            agg_row = pd.DataFrame([{
+                "Type": "", "Name": "Aggregated",
+                "Request Count": total,
+                "Failure Count": agg["Failure Count"].sum(),
+                "Average Response Time": np.average(agg["Average Response Time"], weights=agg["Request Count"]),
+                "Min Response Time": agg["Min Response Time"].min(),
+                "Max Response Time": agg["Max Response Time"].max(),
+                "Average Content Size": np.average(agg["Average Content Size"], weights=agg["Request Count"]),
+                "Requests/s": agg["Requests/s"].mean(),
+                "Failures/s": agg["Failures/s"].mean(),
+                "50%": np.average(agg["50%"], weights=agg["Request Count"]),
+                "66%": np.average(agg["66%"], weights=agg["Request Count"]),
+                "75%": np.average(agg["75%"], weights=agg["Request Count"]),
+                "80%": np.average(agg["80%"], weights=agg["Request Count"]),
+                "90%": np.average(agg["90%"], weights=agg["Request Count"]),
+                "95%": np.average(agg["95%"], weights=agg["Request Count"]),
+                "98%": np.average(agg["98%"], weights=agg["Request Count"]),
+                "99%": np.average(agg["99%"], weights=agg["Request Count"]),
+                "99.9%": np.average(agg["99.9%"], weights=agg["Request Count"]),
+                "99.99%": np.average(agg["99.99%"], weights=agg["Request Count"]),
+                "100%": agg["100%"].max(),
+                "Median Response Time": np.average(agg["Median Response Time"], weights=agg["Request Count"]),
+            }])
+            pd.concat([agg, agg_row], ignore_index=True).to_csv(
+                os.path.join(output_dir, "report_stats.csv"), index=False
+            )
+    def _run_test_thread(self):
+        locustfile = self._selected_locustfile_for_page(self._active_page)
+
+        if not locustfile or not os.path.isfile(locustfile):
+            self.write_log(f"✗ Locustfile not found: {locustfile}")
+            self._set_stop_enabled(False)
+            return
+
+        if not self._validate_fields():
+            self._set_stop_enabled(False)
+            return
+        # ================================================================
+        # TCP/UDP
+        # ================================================================
+
+        if self._active_page in ("TCP", "UDP"):
+            self._save_env_from_gui()
+            params = self._collect_run_params()
+            stages: list[dict[str, Any]] = params.pop("stages")
+            total_run_time = sum(int(str(s["duration"])) for s in stages)
+
+            self.write_log("=" * 60)
+            self.write_log(f"▶ [{self._active_page}] Starting {len(stages)}-stage test on {params['host_ip']}...")
+            self.write_log("-" * 60)
+
+            try:
+                self._network_monitor = NetworkMonitor(
+                    interface=self.get("interface"),
+                    interval=1,
+                    output_file=os.path.join(DATA_DIR, "network_usage.csv")
+                )
+                self._network_monitor.start()
+
+                interval = int(self.get("reach_interval") or 5)
+                reach_thread = threading.Thread(
+                    target=self._run_reachability,
+                    args=(total_run_time, interval, params.get("host_ip")),
+                    daemon=True
+                )
+                reach_thread.start()
+
+                self._save_test_config(BASE_DIR)
+                start_time = datetime.now()
+
+                self.write_log("🔍 Scanning for open ports...")
+                port = test_main.scan(
+                    host_ip=params["host_ip"],
+                    protocol=params["protocol"],
+                    range_start=params["range_start"],
+                    range_end=params["range_end"],
+                )
+                self.write_log(f"✓ Using port {port} for all stages.")
+
+                stage_dirs = []
+                for i, stage in enumerate(stages):
+                    if self._stop_requested:
+                        self.write_log("⛔ Test stopped — remaining stages skipped.")
+                        break
+
+                    stage_dir = os.path.join(DATA_DIR, f"stage_{i + 1}")
+                    os.makedirs(stage_dir, exist_ok=True)
+                    stage_dirs.append(stage_dir)
+
+                    self.write_log(f"  Stage {i + 1}/{len(stages)}: {stage['users']} users, "
+                                   f"{stage['spawn_rate']} spawn rate, {stage['duration']}s, "
+                                   f"{stage.get('packet_size', 60)}B packets")
+                    test_main.run(
+                        **params,
+                        port=port,
+                        users=str(stage["users"]),
+                        spawn_rate=str(stage["spawn_rate"]),
+                        run_time=str(stage["duration"]),
+                        packet_size=str(stage.get("packet_size", 60)),
+                        csv_prefix=os.path.join(stage_dir, "report"),
+                        on_master_start=lambda proc: setattr(self, "locust_process", proc),
+                    )
+
+                if stage_dirs:
+                    self.write_log("  Merging stage data...")
+                    self._merge_stage_csvs(stage_dirs, DATA_DIR)
+
+                end_time = datetime.now()
+
+                ip_pool_file = params.get("ip_pool_file", "")
+                try:
+                    with open(ip_pool_file) as f:
+                        ip_pool = [line.strip() for line in f if line.strip()]
+                except Exception:
+                    ip_pool = []
+
+                meta_df = pd.DataFrame([{
+                    "start_time": start_time.strftime("%d-%m-%Y %H:%M:%S"),
+                    "end_time": end_time.strftime("%d-%m-%Y %H:%M:%S"),
+                    "duration": (end_time - start_time).total_seconds(),
+                    "stages_duration": total_run_time,
+                    "test_type": self._active_page,
+                    "target_host": params["host_ip"],
+                    "target_ip": params["host_ip"],
+                    "used_ips": ", ".join(ip_pool),
+                    "ip_pool_count": len(ip_pool),
+                    "packet_size": int(stages[0].get("packet_size", 60)) if stages else 0,
+                }])
+                meta_df.to_csv(os.path.join(DATA_DIR, "report_metadata.csv"), index=False)
+                self.write_log("-" * 60)
+                self.write_log(f"✓ [{self._active_page}] Test completed.")
+                reach_thread.join(timeout=5)
+
+            except Exception as e:
+                self.write_log(f"✗ Test error: {e}")
+            finally:
+                if self._network_monitor:
+                    self._network_monitor.stop()
+                    self._network_monitor = None
+                self.write_log("=" * 60)
+                self._set_stop_enabled(False)
+            return
+        # ================================================================
+        # HTTP
+        # ================================================================
+        try:
+            stages = self._save_stages()
+
+            if not stages:
+                self.write_log("✗ No valid stages — check Duration/Users/Spawn rate fields")
+                return
+
+            run_time = sum(int(s.get("duration", 0)) for s in stages)
+            interval = int(self.get("reach_interval") or 5)
+
+            self._save_port_pool()
+            self._save_env_from_gui()
+            self._save_test_config(BASE_DIR)
+            self.write_log("=" * 60)
+
+            interface = self.get("monitor_interface") or self.get("interface")
+            self._network_monitor = NetworkMonitor(
+                interface   = interface,
+                interval    = 1,
+                output_file = os.path.join(DATA_DIR, "network_usage.csv")
+            )
+            self._network_monitor.start()
+            self.write_log(f"📡 Network monitor started on {interface}")
+
+            self.write_log("▶ Starting Reachability monitoring...")
+            reach_thread = threading.Thread(
+                target=self._run_reachability, args=(run_time, interval), daemon=True
+            )
+            reach_thread.start()
+
+            self.write_log("▶ Starting Locust test...")
+            self.write_log("-" * 60)
+            cmd = [
+                sys.executable, "-m", "locust", "-f",
+                locustfile,
+                "--headless",
+                "-H",             self.get("target"),
+                "--stop-timeout", self.get("stop_timeout") or "60",
+                "--processes",    self.get("processes"),
+                "--csv",          os.path.join(DATA_DIR, "report"),
+            ]
+            self.write_log(f"CMD: {' '.join(cmd)}")
+            self.write_log("-" * 60)
+
+            self.locust_process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                start_new_session=True
+            )
+            for line in self.locust_process.stdout:
+                line = line.rstrip()
+                if line:
+                    self.write_log(line)
+            self.locust_process.wait()
+            reach_thread.join(timeout=5)
+
+            self.write_log("-" * 60)
+            if self.locust_process.returncode == 0:
+                self.write_log("✓ Locust test completed successfully")
+            elif self.locust_process.returncode == 1:
+                self.write_log("⚠ Locust test completed with request failures")
+            else:
+                self.write_log(f"✗ Locust process ended with error code {self.locust_process.returncode}")
+            self.write_log("=" * 60)
+
+        except Exception as e:
+            self.write_log(f"✗ Test error: {e}")
+        finally:
+            if self._network_monitor:
+                self._network_monitor.stop()
+                self._network_monitor = None
+                self.write_log("📡 Network monitor stopped")
+            self._set_stop_enabled(False)
+
+    # ================================================================
+    # terminate process
+    # ================================================================
+
+    def _terminate_process_group(self, process, name="process", timeout=5):
+        """
+        Terminates a process and all child processes in its process group.
+        This is needed for Locust when running with --processes -1.
+        """
+        if process is None:
+            return
+
+        if process.poll() is not None:
+            return
+
+        try:
+            pgid = os.getpgid(process.pid)
+            self.write_log(f"⏹ Stopping {name} process group PID={process.pid}, PGID={pgid}")
+
+            os.killpg(pgid, signal.SIGTERM)
+
+            try:
+                process.wait(timeout=timeout)
+                self.write_log(f"✓ {name} stopped")
+                return
+            except subprocess.TimeoutExpired:
+                self.write_log(f"⚠ {name} did not stop in {timeout}s, killing process group")
+                os.killpg(pgid, signal.SIGKILL)
+                process.wait(timeout=3)
+                self.write_log(f"✓ {name} killed")
+
+        except ProcessLookupError:
+            self.write_log(f"ℹ {name} already stopped")
+
+        except Exception as e:
+            self.write_log(f"⚠ Could not stop {name} process group: {e}")
+
+            try:
+                process.terminate()
+                process.wait(timeout=timeout)
+            except Exception:
+                try:
+                    process.kill()
+                except Exception:
+                    pass
+
+    def stop_locust(self):
+        self._stop_requested = True
+        if not self._stop_enabled:
+            return
+
+        self.write_log("⛔ Stop requested by user")
+
+        # Stop reachability thread
+        try:
+            self._reach_stop_event.set()
+        except Exception:
+            pass
+
+        # Stop Locust master + all worker processes
+        self._terminate_process_group(
+            self.locust_process,
+            name="Locust",
+            timeout=5
+        )
+
+        # Stop network monitor immediately as well
+        try:
+            if self._network_monitor:
+                self._network_monitor.stop()
+                self._network_monitor = None
+                self.write_log("📡 Network monitor stopped")
+        except Exception as e:
+            self.write_log(f"⚠ Network monitor stop error: {e}")
+
+        self._set_stop_enabled(False)
+        if self._active_page in self._pages and isinstance(self._pages.get(self._active_page), dict):
+            p = self._pages[self._active_page]
+            p["runbtn"].configure(state="normal")
+            p["stopbtn"].configure(state="disabled")
+        else:
+            self.runbtn.configure(state="normal")
+            self.stopbtn.configure(state="disabled")
+
+    def _run_reachability(self, duration, interval, ipaddr = None):
+        self._reach_stop_event.clear()
+        try:
+            if self._active_page in ("TCP","UDP"):
+                self.write_log("▶ Starting TCP/UDP reachability monitoring...")
+                Watchdog(
+                    ipaddr=ipaddr,
+                    poll_interval=float(self.get("reach_interval") or 1.0),
+                    duration=duration,
+                    output_dir=DATA_DIR,
+                    iface=self.get("reach_interface") or self.get("interface"),
+                    stop_event=self._reach_stop_event,
+                )
+            elif self._active_page == "HTTP/S":
+                reach_interface = self.get("reach_interface") or self.get("interface")
+                run_reachability_check(
+                    source_ip=self.get("reach_src_ip") or self._get_ip_start(),
+                    url=self.get("target"),
+                    interval=interval,
+                    duration=duration,
+                    timeout=float(self.get("reach_timeout") or 5),
+                    csv_file=os.path.join(DATA_DIR, "reachability.csv"),
+                    stop_event=self._reach_stop_event,
+                    interface=reach_interface,
+                )
+            else:
+                self.write_log(f"✗ Unknown page: {self._active_page}")
+        except Exception as e:
+            self.write_log(f"✗ Reachability error: {e}")
+
+    # ================================================================
+    # REPORT
+    # ================================================================
+
+    def _generate_report(self):
+        threading.Thread(target=self._generate_report_thread, daemon=True).start()
+
+    def _generate_report_thread(self):
+        try:
+            (target_clean, target_ip, source_range, interface,
+             request_threshold, reach_threshold, test_type_cfg, processes, stop_timeout,
+             reach_src_ip, ip_pool_count, ip_pool_range,
+             http_method, endpoint_path, connect_timeout, read_timeout,
+             src_ports, reach_interval_cfg, reach_timeout_cfg, reach_interface, target_rps) = self._load_test_config(BASE_DIR)
+
+            report_name = self._report_name_entry.get().strip() or "Locust_Report"
+            if not report_name.endswith(".pdf"):
+                report_name += ".pdf"
+            save_dir = self._report_dir_entry.get().strip() or REPORT_DIR
+            os.makedirs(save_dir, exist_ok=True)
+            pdf_path = os.path.join(save_dir, report_name)
+            sign = self._sign_var.get()
+            p12_path = self._cert_path_entry.get().strip() if sign else ""
+            p12_pass = self.cert_pass.get().strip().encode() if sign else b""
+
+            include_failures = self._include_failures_var.get()
+
+            self.write_log("=" * 60)
+            self.write_log("▶ Generating PDF report...")
+            create_pdf_report(
+                stats_file      = os.path.join(DATA_DIR, "report_stats.csv"),
+                history_file    = os.path.join(DATA_DIR, "report_stats_history.csv"),
+                reach_file   = os.path.join(DATA_DIR, "reachability.csv"),
+                output_file     = pdf_path,
+                meta_file       = os.path.join(DATA_DIR, "report_metadata.csv"),
+                network_file    = os.path.join(DATA_DIR, "network_usage.csv"),
+                comment         = self.get_comment(),
+                target_ip       = target_ip,
+                source_ip       = source_range,
+                ip_pool_count   = ip_pool_count,
+                ip_pool_range   = ip_pool_range,
+                interface       = interface,
+                request_threshold = request_threshold / 100,
+                reach_threshold = reach_threshold / 100,
+                test_type       = test_type_cfg,
+                src_ports       = src_ports or None,
+                http_method     = http_method,
+                endpoint_path   = endpoint_path,
+                processes       = processes,
+                stop_timeout    = stop_timeout,
+                connect_timeout = connect_timeout,
+                read_timeout    = read_timeout,
+                reach_interval  = reach_interval_cfg,
+                reach_timeout   = float(reach_timeout_cfg),
+                reach_src_ip    = reach_src_ip,
+                reach_interface = reach_interface,
+                target_rps      = target_rps,
+                include_failures=include_failures,
+                sign             = sign,
+                p12_path         = p12_path,
+                p12_pass         = p12_pass,
+            )
+            self.write_log(f"✓ {report_name} generated → {save_dir}")
+            self.write_log("=" * 60)
+            if os.geteuid() != 0:
+                self._open_file(pdf_path)
+            else:
+                self.write_log(f"⚠ Running as root — please open the report manually:")
+                self.write_log(f"   {pdf_path}")
+        except Exception as e:
+            self.write_log(f"✗ Report error: {e}")
+
+    # ================================================================
+    # SAVE POOL  (nový formát IP/prefix)
+    # ================================================================
+
+    def _save_current_pool_to_dir(self):
+        pool_src = os.path.join(BASE_DIR, "ip_pool.txt")
+        if not os.path.exists(pool_src):
+            self.write_log("⚠ ip_pool.txt not found — run Setup IP Pool first")
+            return
+
+        os.makedirs(IP_POOL_DIR, exist_ok=True)
+
+        ip_ver     = self._active_ip_version()
+        prefix_len = self._get_prefix_len()
+        timestamp  = time.strftime("%Y%m%d_%H%M%S")
+        suggested  = f"pool_{ip_ver}_{timestamp}"
+
+        dlg = SavePoolDialog(self, IP_POOL_DIR, suggested)
+        if dlg.result_name is None:
+            return  # užívateľ zrušil
+
+        dest = os.path.join(IP_POOL_DIR, dlg.result_name + ".txt")
+
+        if dlg.result_mode == "append" and dlg.result_target and os.path.exists(dlg.result_target):
+            # ── Merge ─────────────────────────────────────────────
+            existing = parse_pool_lines(dlg.result_target)
+            new_ips  = parse_pool_lines(pool_src)
+
+            merged, added = self._merge_pool_entries(existing, new_ips, prefix_len)
+
+            self._write_pool_file(dest, merged, prefix_len)
+            self.write_log(
+                f"🔀 Merge: {len(existing)} existing + {added} new = {len(merged)} total IPs"
+            )
+        else:
+            entries = parse_pool_lines(pool_src)
+            needs_rewrite = any(p is None for _, p in entries)
+
+            if needs_rewrite:
+                self._write_pool_file(dest, entries, prefix_len)
+            else:
+                shutil.copy2(pool_src, dest)
+
+        fname      = os.path.basename(dest)
+        pool_count = len(parse_pool_lines(dest))
+        self.write_log(
+            f"💾 Pool saved → ip_pool/{fname}  "
+            f"({pool_count} IPs, /{prefix_len}, {ip_ver.upper()})"
+        )
+
+    # ================================================================
+    # CLEANUP
+    # ================================================================
+
+    def cleanup(self):
+        threading.Thread(target=self._cleanup_thread, daemon=True).start()
+
+    def _cleanup_thread(self):
+        try:
+            self.write_log("=" * 60)
+            self.write_log("▶ Removing IP pool from interface...")
+            prefix_len = self._get_prefix_len()
+            interface  = self.get("interface")
+            pool_file  = os.path.join(BASE_DIR, "ip_pool.txt")
+
+            if os.path.exists(pool_file):
+                entries = parse_pool_lines(pool_file)
+            else:
+                entries = [(ip, None) for ip in self._get_ip_list()]
+
+            if not entries:
+                self.write_log("⚠ ip_pool.txt is empty — nothing to remove")
+                return
+
+            groups = defaultdict(list)
+            for ip, p in entries:
+                ver    = "ipv6" if is_ipv6(ip) else "ipv4"
+                prefix = p if p else ("128" if ver == "ipv6" else prefix_len)
+                groups[(ver, prefix)].append(ip)
+
+            total_removed = 0
+            for (ver, pfx), ip_list in groups.items():
+                self.write_log(
+                    f"🗑 Removing {len(ip_list)} {ver.upper()} addresses (/{pfx})..."
+                )
+                remove_pool(
+                    ip_start   = ip_list[0],
+                    ip_end     = ip_list[-1],
+                    interface  = interface,
+                    pool_file  = pool_file,
+                    ip_version = ver,
+                    ip_list    = ip_list,
+                    prefix_len = pfx,
+                )
+                total_removed += len(ip_list)
+                self.write_log(f"  ✓ {ver.upper()} /{pfx} — done")
+
+            self.write_log(f"✓ Cleanup complete — {total_removed} addresses removed")
+            self.write_log("=" * 60)
+        except Exception as e:
+            self.write_log(f"✗ Cleanup error: {e}")
+
+
+if __name__ == "__main__":
+    app = LocustGUI(initial_theme=os.environ.get("LOCUST_GUI_THEME", "Navy Blue"))
+    app.mainloop()
+
