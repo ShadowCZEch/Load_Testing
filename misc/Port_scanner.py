@@ -5,16 +5,21 @@ from .Config_Load import config_load
 import random
 from scapy.layers.inet import IP,TCP,sr1
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
+from scapy.layers.inet6 import IPv6
 
 def syn_scan(target_ip,version, port, timeout=0.5):
-    from scapy.all import IPv6
-    protocol = IP(dst=target_ip) if version == 4 else IPv6(dst=target_ip)
-    pkt = protocol/TCP(dport=port,flags="S")
+    if version == 6:
+        ip_layer = IPv6(dst=target_ip)
+        rst_layer = IPv6(dst=target_ip)
+    else:
+        ip_layer = IP(dst=target_ip)
+        rst_layer = IP(dst=target_ip)
+
+    pkt = ip_layer/TCP(dport=port,flags="S")
     resp = sr1(pkt,timeout=timeout,verbose=False)
 
     if resp and resp.haslayer(TCP) and resp[TCP].flags == 0x12:
-        rst = IP(dst=target_ip)/TCP(dport=port,flags="R")
+        rst = rst_layer/TCP(dport=port,flags="R")
         send(rst, verbose=False)
         return True
     return False
